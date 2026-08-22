@@ -8,13 +8,14 @@ import { StudyTimerModal } from './components/StudyTimerModal';
 import { StatsModal } from './components/StatsModal';
 import { GoCheatsheetModal } from './components/GoCheatsheetModal';
 import { InstallGuideModal } from './components/InstallGuideModal';
-import { AppData, AppSettings, FilterState, PlanProgress, SECTION_FILTER_PREFIX } from './types';
+import { AppData, AppSettings, FilterState, Plan, PlanProgress, SECTION_FILTER_PREFIX } from './types';
 import { loadAppData, saveAppData, logStudyActivity, emptyPlanProgress } from './utils/storage';
 import { BUILT_IN_PLANS, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
 import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
 import { sendDailyReminderNotification } from './utils/notifications';
 import { PlanSwitcher } from './components/PlanSwitcher';
+import { PlanEditorModal } from './components/PlanEditorModal';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -26,6 +27,10 @@ export default function App() {
   const [showTimerModal, setShowTimerModal] = useState(false);
   const [showCheatsheetModal, setShowCheatsheetModal] = useState(false);
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+  // Plan editor: null = closed; 'new' = creating; planId string = editing that custom plan
+  const [editorState, setEditorState] = useState<{ mode: 'new' } | { mode: 'edit'; planId: string } | null>(
+    null
+  );
 
   // PWA install prompt event
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -274,6 +279,27 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  const handleSavePlan = (saved: Plan) => {
+    handleUpdateData((prev) => {
+      const exists = prev.customPlans.some((p) => p.id === saved.id);
+      return {
+        ...prev,
+        customPlans: exists
+          ? prev.customPlans.map((p) => (p.id === saved.id ? saved : p))
+          : [...prev.customPlans, saved],
+        activePlanId: saved.id
+      };
+    });
+    setEditorState(null);
+    setFilter({ section: 'ALL', searchQuery: '' });
+    setOpenCardId(null);
+  };
+
+  const editorTarget =
+    editorState?.mode === 'edit'
+      ? appData.customPlans.find((p) => p.id === editorState.planId) ?? null
+      : null;
+
   const handleJumpToActive = () => {
     if (!activePhase) return;
     setFilter((prev) => ({ ...prev, section: 'ALL', searchQuery: '' }));
@@ -342,6 +368,8 @@ export default function App() {
             onFork={handleForkPlan}
             onDelete={handleDeletePlan}
             onImportFile={handleImportPlanFile}
+            onCreate={() => setEditorState({ mode: 'new' })}
+            onEdit={(planId) => setEditorState({ mode: 'edit', planId })}
           />
         }
         onOpenStats={() => setShowStatsModal(true)}
@@ -478,6 +506,14 @@ export default function App() {
         canInstallPwa={!!deferredPrompt}
         onTriggerPwaInstall={handleTriggerPwaInstall}
       />
+
+      {editorState && (
+        <PlanEditorModal
+          plan={editorState.mode === 'edit' ? editorTarget : null}
+          onClose={() => setEditorState(null)}
+          onSave={handleSavePlan}
+        />
+      )}
     </div>
   );
 }

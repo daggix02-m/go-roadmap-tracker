@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, Copy, Trash2, Upload } from 'lucide-react';
+import { Check, ChevronDown, Copy, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { Plan, PlanProgress } from '../types';
 
 interface PlanSwitcherProps {
@@ -10,6 +10,8 @@ interface PlanSwitcherProps {
   onFork: (planId: string) => void;
   onDelete: (planId: string) => void;
   onImportFile: (file: File) => void;
+  onCreate: () => void;
+  onEdit: (planId: string) => void;
 }
 
 export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
@@ -19,7 +21,9 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
   onSelect,
   onFork,
   onDelete,
-  onImportFile
+  onImportFile,
+  onCreate,
+  onEdit
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -137,18 +141,32 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                   </button>
 
                   {!plan.builtIn && (
-                    <button
-                      role="menuitem"
-                      aria-label={`Delete ${plan.name}`}
-                      title={`Delete ${plan.name}`}
-                      onClick={() => {
-                        onDelete(plan.id);
-                        setIsOpen(false);
-                      }}
-                      className="p-1.5 rounded-md text-muted hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    <>
+                      <button
+                        role="menuitem"
+                        aria-label={`Edit ${plan.name}`}
+                        title={`Edit ${plan.name}`}
+                        onClick={() => {
+                          onEdit(plan.id);
+                          setIsOpen(false);
+                        }}
+                        className="p-1.5 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        role="menuitem"
+                        aria-label={`Delete ${plan.name}`}
+                        title={`Delete ${plan.name}`}
+                        onClick={() => {
+                          onDelete(plan.id);
+                          setIsOpen(false);
+                        }}
+                        className="p-1.5 rounded-md text-muted hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
                   )}
                 </li>
               );
@@ -157,6 +175,17 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
 
           {/* Actions */}
           <div className="mt-1.5 pt-1.5 border-t border-line flex flex-col gap-0.5">
+            <button
+              role="menuitem"
+              onClick={() => {
+                onCreate();
+                setIsOpen(false);
+              }}
+              className="flex items-center gap-2 px-2 py-2 rounded-md text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              New plan
+            </button>
             <button
               role="menuitem"
               onClick={() => fileInputRef.current?.click()}
