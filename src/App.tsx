@@ -16,6 +16,7 @@ import { getProgressSummary } from './data/progress';
 import { sendDailyReminderNotification } from './utils/notifications';
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { PlanEditorModal } from './components/PlanEditorModal';
+import { WidgetDashboard } from './components/WidgetDashboard';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -400,6 +401,16 @@ export default function App() {
       />
 
       <main className="max-w-3xl mx-auto px-4 pt-4 space-y-3">
+        {/* Widget-style overview */}
+        <WidgetDashboard
+          accent={activePlan.accent}
+          progress={progressSummary}
+          streak={appData.global.streak}
+          activePhase={activePhase}
+          totalStudyMinutes={appData.global.totalStudyMinutes}
+          onJumpToActive={handleJumpToActive}
+        />
+
         {/* Intro: the method */}
         {activePlan.method &&
           filter.section === 'ALL' &&
