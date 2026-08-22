@@ -1,22 +1,30 @@
 import React, { useRef } from 'react';
 import { Download, RotateCcw, Upload, X } from 'lucide-react';
-import { UserState } from '../types';
+import { AppData, Plan, PlanProgress } from '../types';
 import { getActivityHistory, formatStudyMinutes, getProgressSummary } from '../data/progress';
-import { exportUserDataAsJSON, DEFAULT_USER_STATE, saveUserState } from '../utils/storage';
+import { exportAppDataAsJSON, normalizeAppData, saveAppData } from '../utils/storage';
 
 interface StatsModalProps {
-  userState: UserState;
+  appData: AppData;
+  plan: Plan;
+  progress: PlanProgress;
   onClose: () => void;
-  onUpdateState: (newState: UserState) => void;
+  onUpdateData: (newData: AppData) => void;
 }
 
 const labelClass = 'text-[11px] font-medium uppercase tracking-wider text-faint mb-2 font-mono';
 
-export const StatsModal: React.FC<StatsModalProps> = ({ userState, onClose, onUpdateState }) => {
+export const StatsModal: React.FC<StatsModalProps> = ({
+  appData,
+  plan,
+  progress,
+  onClose,
+  onUpdateData
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const progress = getProgressSummary(userState);
-  const activity = getActivityHistory(userState, 14);
+  const summary = getProgressSummary(plan, progress);
+  const activity = getActivityHistory(appData.global, 14);
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
@@ -29,22 +37,61 @@ export const StatsModal: React.FC<StatsModalProps> = ({ userState, onClose, onUp
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
-        if (data && Array.isArray(data.completedPhases)) {
-          const updatedState: UserState = {
-            ...DEFAULT_USER_STATE,
-            ...userState,
-            ...data
-          };
-          saveUserState(updatedState);
-          onUpdateState(updatedState);
-          alert('Progress restored successfully.');
-        } else {
-          alert('Invalid backup file format.');
+        const parsed = JSON.parse(event.target?.result as string);
+
+        // v2 full backup
+        if (parsed && parsed.version === 2) {
+          const restored = normalizeAppData(parsed);
+          saveAppData(restored);
+          onUpdateData(restored);
+          alert('Backup restored successfully.');
+          return;
         }
+
+        // Legacy single-plan backup -> merge into the built-in Go roadmap
+        if (parsed && Array.isArray(parsed.completedPhases)) {
+          const merged = normalizeAppData({
+            ...appData,
+            progressByPlan: {
+              ...appData.progressByPlan,
+              'go-roadmap': {
+                completedPhases: parsed.completedPhases,
+                criteriaChecked:
+                  typeof parsed.criteriaChecked === 'object' && parsed.criteriaChecked
+                    ? parsed.criteriaChecked
+                    : {},
+                stepChecked:
+                  typeof parsed.stepChecked === 'object' && parsed.stepChecked ? parsed.stepChecked : {},
+                userNotes:
+                  typeof parsed.userNotes === 'object' && parsed.userNotes ? parsed.userNotes : {},
+                lastStudiedPhaseId:
+                  typeof parsed.lastStudiedPhaseId === 'number' ? parsed.lastStudiedPhaseId : null
+              }
+            },
+            global: {
+              streak: typeof parsed.streak === 'number' ? parsed.streak : appData.global.streak,
+              lastActiveDate: parsed.lastActiveDate ?? appData.global.lastActiveDate,
+              historyDates: Array.isArray(parsed.historyDates)
+                ? parsed.historyDates
+                : appData.global.historyDates,
+              totalStudyMinutes:
+                typeof parsed.totalStudyMinutes === 'number'
+                  ? parsed.totalStudyMinutes
+                  : appData.global.totalStudyMinutes
+            }
+          });
+          saveAppData(merged);
+          onUpdateData(merged);
+          alert('Legacy Go roadmap backup restored.');
+          return;
+        }
+
+        alert('Invalid backup file format.');
       } catch {
         alert('Failed to parse backup file.');
       }
+      // Allow re-selecting the same file after a failed attempt
+      e.target.value = '';
     };
     reader.readAsText(file);
   };
@@ -52,16 +99,19 @@ export const StatsModal: React.FC<StatsModalProps> = ({ userState, onClose, onUp
   const handleResetData = () => {
     if (
       window.confirm(
-        'This will permanently erase all phase progress, checkmarks, notes, and streak history. Continue?'
+        'This will permanently erase ALL plans, phase progress, checkmarks, notes, and streak history. Continue?'
       )
     ) {
-      const resetState: UserState = {
-        ...DEFAULT_USER_STATE,
-        dailyReminderEnabled: userState.dailyReminderEnabled,
-        dailyReminderTime: userState.dailyReminderTime
-      };
-      saveUserState(resetState);
-      onUpdateState(resetState);
+      const resetState = normalizeAppData({
+        version: 2,
+        activePlanId: 'go-roadmap',
+        customPlans: [],
+        settings: appData.settings,
+        global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0 },
+        progressByPlan: {}
+      });
+      saveAppData(resetState);
+      onUpdateData(resetState);
       onClose();
     }
   };
@@ -88,17 +138,17 @@ export const StatsModal: React.FC<StatsModalProps> = ({ userState, onClose, onUp
 
         <h2 className="text-base font-semibold text-text">Progress</h2>
         <p className="text-xs text-muted mt-0.5">
-          Phase {Math.min(progress.completedPhases + 1, progress.totalPhases)} of{' '}
-          {progress.totalPhases} · {progress.overallPercent}% complete
+          Phase {Math.min(summary.completedPhases + 1, Math.max(summary.totalPhases, 1))} of{' '}
+          {summary.totalPhases} · {summary.overallPercent}% complete
         </p>
 
         {/* Overview metrics */}
         <div className="mt-5 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
-            { label: 'Phases', value: `${progress.completedPhases}/${progress.totalPhases}` },
-            { label: 'Steps', value: `${progress.checkedSteps}/${progress.totalSteps}` },
-            { label: 'Criteria', value: `${progress.checkedCriteria}/${progress.totalCriteria}` },
-            { label: 'Study time', value: formatStudyMinutes(userState.totalStudyMinutes) }
+            { label: 'Phases', value: `${summary.completedPhases}/${summary.totalPhases}` },
+            { label: 'Steps', value: `${summary.checkedSteps}/${summary.totalSteps}` },
+            { label: 'Criteria', value: `${summary.checkedCriteria}/${summary.totalCriteria}` },
+            { label: 'Study time', value: formatStudyMinutes(appData.global.totalStudyMinutes) }
           ].map((m) => (
             <div key={m.label} className="p-3 rounded-lg bg-raised border border-line">
               <div className="font-mono text-base text-text">{m.value}</div>
@@ -111,101 +161,88 @@ export const StatsModal: React.FC<StatsModalProps> = ({ userState, onClose, onUp
         <div className="mt-3 p-3 rounded-lg bg-raised border border-line flex items-center justify-between">
           <div>
             <div className="text-sm text-text">
-              <span className="font-mono">{userState.streak}</span>{' '}
-              {userState.streak === 1 ? 'day' : 'days'} streak
+              <span className="font-mono">{appData.global.streak}</span>{' '}
+              {appData.global.streak === 1 ? 'day' : 'days'} streak
             </div>
             <div className="text-[11px] text-muted mt-0.5">
               Any activity today keeps it going.
             </div>
           </div>
-          {/* Last 14 days */}
-          <div className="flex items-end gap-[3px]" aria-hidden>
-            {activity.map((d) => (
+
+          {/* Activity history */}
+          <div className="flex items-end gap-1" role="img" aria-label="Last 14 days activity">
+            {activity.map((a) => (
               <span
-                key={d.date}
-                title={d.date}
-                className={`w-[7px] h-4 rounded-sm ${
-                  d.active ? 'bg-success' : 'bg-line'
+                key={a.date}
+                title={a.date}
+                className={`w-2 rounded-sm ${
+                  a.active ? 'h-6 bg-success' : 'h-3 bg-hover border border-line'
                 }`}
               />
             ))}
           </div>
         </div>
 
-        {/* Part breakdown */}
-        <div className="mt-6">
-          <h3 className={labelClass}>By part</h3>
-          <div className="space-y-3">
-            {progress.parts.map((p) => (
-              <div key={p.part}>
-                <div className="flex items-center justify-between text-xs mb-1.5">
-                  <span className="text-text/90">{p.name}</span>
-                  <span className="font-mono text-faint">
-                    {p.completed}/{p.total}
+        {/* Section breakdown */}
+        {summary.parts.length > 1 && (
+          <div className="mt-3 space-y-1.5">
+            <h3 className={labelClass}>By section</h3>
+            {summary.parts.map((part) => (
+              <div key={part.id} className="p-2.5 rounded-lg bg-raised border border-line">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-text truncate">{part.name}</span>
+                  <span className="font-mono text-[11px] text-faint shrink-0">
+                    {part.completed}/{part.total}
                   </span>
                 </div>
-                <div
-                  role="progressbar"
-                  aria-valuenow={p.percent}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label={`${p.name} progress`}
-                  className="h-1 w-full rounded-full bg-page overflow-hidden border border-line"
-                >
+                <div className="mt-1.5 h-1 w-full rounded-full bg-page overflow-hidden">
                   <div
-                    className="h-full bg-accent transition-all duration-500"
-                    style={{ width: `${p.percent}%` }}
+                    className="h-full bg-accent transition-all duration-500 ease-out"
+                    style={{ width: `${part.percent}%` }}
                   />
                 </div>
               </div>
             ))}
           </div>
-        </div>
+        )}
 
         {/* Data management */}
-        <div className="mt-6 pt-4 border-t border-line">
-          <h3 className={labelClass}>Data</h3>
-          <p className="text-xs text-muted mb-3 leading-relaxed">
-            Progress is stored locally in your browser. Export a JSON backup to move it to another
-            device.
-          </p>
-
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".json"
-            className="hidden"
-            aria-hidden
-          />
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => exportUserDataAsJSON(userState)}
-              className="py-2 px-3 rounded-md bg-raised hover:bg-hover border border-line hover:border-line-strong text-text text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export backup
-            </button>
-
-            <button
-              onClick={handleImportClick}
-              className="py-2 px-3 rounded-md bg-raised hover:bg-hover border border-line hover:border-line-strong text-text text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Import backup
-            </button>
-          </div>
-
+        <div className="mt-5 pt-4 border-t border-line flex flex-wrap gap-2">
           <button
-            onClick={handleResetData}
-            className="mt-3 text-xs text-danger hover:underline flex items-center gap-1 cursor-pointer font-medium"
+            id="export-data-btn"
+            onClick={() => exportAppDataAsJSON(appData)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line hover:border-line-strong hover:bg-hover text-muted hover:text-text text-xs font-medium transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-3 h-3" />
-            Reset all progress
+            <Download className="w-3.5 h-3.5" />
+            Export backup
+          </button>
+          <button
+            id="import-data-btn"
+            onClick={handleImportClick}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line hover:border-line-strong hover:bg-hover text-muted hover:text-text text-xs font-medium transition-colors cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import backup
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={handleFileChange}
+            className="hidden"
+            aria-hidden="true"
+          />
+          <button
+            id="reset-data-btn"
+            onClick={handleResetData}
+            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-danger/30 text-danger/80 hover:text-danger hover:border-danger/60 text-xs font-medium transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset all data
           </button>
         </div>
       </div>
     </div>
   );
 };
+

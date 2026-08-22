@@ -22,17 +22,21 @@ export function getNotificationPermission(): NotificationPermission {
   return Notification.permission;
 }
 
-export function sendDailyReminderNotification(activePhase: Phase, streak: number): boolean {
+export function sendDailyReminderNotification(
+  activePhase: Phase,
+  streak: number,
+  planName = 'Roadmap'
+): boolean {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
   }
 
-  const title = `Go roadmap — ${activePhase.shortTitle || activePhase.title.split('—')[0]}`;
+  const title = `${planName} — ${activePhase.shortTitle || activePhase.title.split('—')[0]}`;
   const options: NotificationOptions & { renotify?: boolean } = {
-    body: `Streak: ${streak} day${streak === 1 ? '' : 's'}. Next Goal: ${activePhase.what.slice(0, 90)}...`,
+    body: `Streak: ${streak} day${streak === 1 ? '' : 's'}. Next goal: ${(activePhase.what || activePhase.title).slice(0, 90)}...`,
     icon: '/icon.svg',
     badge: '/icon.svg',
-    tag: 'go-daily-reminder',
+    tag: 'daily-reminder',
     renotify: true,
     data: {
       url: '/',
@@ -55,17 +59,17 @@ export function sendDailyReminderNotification(activePhase: Phase, streak: number
   }
 }
 
-export function sendTestNotification(activePhase: Phase, streak: number): boolean {
+export function sendTestNotification(activePhase: Phase, streak: number, planName = 'Roadmap'): boolean {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
   }
 
-  const title = 'Go Roadmap Tracker';
+  const title = planName;
   const options: NotificationOptions = {
     body: `Daily reminder is active. You are on ${activePhase.title.split('—')[0]} (${activePhase.shortTitle}). Streak: ${streak} days.`,
     icon: '/icon.svg',
     badge: '/icon.svg',
-    tag: 'go-test-reminder'
+    tag: 'test-reminder'
   };
 
   try {

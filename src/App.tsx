@@ -8,17 +8,15 @@ import { StudyTimerModal } from './components/StudyTimerModal';
 import { StatsModal } from './components/StatsModal';
 import { GoCheatsheetModal } from './components/GoCheatsheetModal';
 import { InstallGuideModal } from './components/InstallGuideModal';
-import { FilterState, UserState } from './types';
-import { ROADMAP_DATA, ROADMAP_METHOD, WORKING_PRINCIPLE } from './data/roadmapData';
-import { loadUserState, saveUserState, recordStudyActivity } from './utils/storage';
+import { AppData, AppSettings, FilterState, PlanProgress, SECTION_FILTER_PREFIX } from './types';
+import { loadAppData, saveAppData, logStudyActivity, emptyPlanProgress } from './utils/storage';
+import { getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
+import { getProgressSummary } from './data/progress';
 import { sendDailyReminderNotification } from './utils/notifications';
 
 export default function App() {
-  const [userState, setUserState] = useState<UserState>(() => loadUserState());
-  const [filter, setFilter] = useState<FilterState>({
-    part: 'ALL',
-    searchQuery: ''
-  });
+  const [appData, setAppData] = useState<AppData>(() => loadAppData());
+  const [filter, setFilter] = useState<FilterState>({ section: 'ALL', searchQuery: '' });
   const [openCardId, setOpenCardId] = useState<number | null>(null);
 
   // Modals state
@@ -49,23 +47,36 @@ export default function App() {
     };
   }, []);
 
-  // Lowest incomplete phase = current focus
-  const activePhase = useMemo(() => {
-    for (const phase of ROADMAP_DATA) {
-      if (!userState.completedPhases.includes(phase.id)) return phase;
-    }
-    return ROADMAP_DATA[ROADMAP_DATA.length - 1];
-  }, [userState.completedPhases]);
+  // Active plan & progress (falls back to the built-in Go roadmap)
+  const activePlan = useMemo(() => getActivePlan(appData), [appData]);
+  const progress = useMemo(
+    () => getPlanProgress(appData, activePlan.id),
+    [appData, activePlan.id]
+  );
+  const hasPhases = activePlan.phases.length > 0;
+  const activePhase = useMemo(
+    () => (hasPhases ? getActivePhase(activePlan, progress) : null),
+    [hasPhases, activePlan, progress]
+  );
+  const progressSummary = useMemo(
+    () => getProgressSummary(activePlan, progress),
+    [activePlan, progress]
+  );
+
+  // Tab title follows the active plan
+  useEffect(() => {
+    document.title = `${activePlan.name} Tracker`;
+  }, [activePlan.name]);
 
   // Open the active card by default on first load
   useEffect(() => {
-    setOpenCardId((prev) => prev ?? activePhase.id);
+    if (activePhase) setOpenCardId((prev) => prev ?? activePhase.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Periodic daily reminder check
   useEffect(() => {
-    if (!userState.dailyReminderEnabled) return;
+    if (!appData.settings.dailyReminderEnabled || !activePhase) return;
 
     const interval = setInterval(() => {
       const now = new Date();
@@ -73,31 +84,52 @@ export default function App() {
       const minutes = String(now.getMinutes()).padStart(2, '0');
       const currentTime = `${hours}:${minutes}`;
 
-      if (currentTime === userState.dailyReminderTime) {
-        sendDailyReminderNotification(activePhase, userState.streak);
+      if (currentTime === appData.settings.dailyReminderTime) {
+        sendDailyReminderNotification(activePhase, appData.global.streak, activePlan.name);
       }
     }, 60000);
 
     return () => clearInterval(interval);
-  }, [userState.dailyReminderEnabled, userState.dailyReminderTime, activePhase, userState.streak]);
+  }, [
+    appData.settings.dailyReminderEnabled,
+    appData.settings.dailyReminderTime,
+    appData.global.streak,
+    activePhase,
+    activePlan.name
+  ]);
 
   // Save state helper
-  const handleUpdateState = (updater: (prev: UserState) => UserState) => {
-    setUserState((prev) => {
+  const handleUpdateData = (updater: (prev: AppData) => AppData) => {
+    setAppData((prev) => {
       const next = updater(prev);
-      saveUserState(next);
+      saveAppData(next);
       return next;
     });
   };
 
   // Direct state reload (for stats modal import/reset)
-  const handleStateReload = (newState: UserState) => {
-    setUserState(newState);
-    saveUserState(newState);
+  const handleStateReload = (newState: AppData) => {
+    setAppData(newState);
+    saveAppData(newState);
+  };
+
+  const handleUpdateSettings = (updater: (prev: AppSettings) => AppSettings) => {
+    handleUpdateData((prev) => ({ ...prev, settings: updater(prev.settings) }));
+  };
+
+  /** Mutates only the active plan's progress object. */
+  const updateProgress = (mutate: (prev: PlanProgress) => PlanProgress) => {
+    handleUpdateData((prev) => ({
+      ...prev,
+      progressByPlan: {
+        ...prev.progressByPlan,
+        [activePlan.id]: mutate(prev.progressByPlan[activePlan.id] ?? emptyPlanProgress())
+      }
+    }));
   };
 
   const handleToggleCriteria = (phaseId: number, criteriaIndex: number) => {
-    handleUpdateState((prev) => ({
+    updateProgress((prev) => ({
       ...prev,
       criteriaChecked: {
         ...prev.criteriaChecked,
@@ -107,7 +139,7 @@ export default function App() {
   };
 
   const handleToggleStep = (phaseId: number, stepIndex: number) => {
-    handleUpdateState((prev) => ({
+    updateProgress((prev) => ({
       ...prev,
       stepChecked: {
         ...prev.stepChecked,
@@ -117,39 +149,39 @@ export default function App() {
   };
 
   const handleToggleComplete = (phaseId: number) => {
-    handleUpdateState((prev) => {
-      const isAlreadyComplete = prev.completedPhases.includes(phaseId);
-      let next: UserState;
+    const isAlreadyComplete = progress.completedPhases.includes(phaseId);
 
-      if (isAlreadyComplete) {
-        next = {
-          ...prev,
-          completedPhases: prev.completedPhases.filter((id) => id !== phaseId)
-        };
-      } else {
-        // Completing a phase also counts as activity for streak purposes
-        next = recordStudyActivity(
-          {
-            ...prev,
-            completedPhases: [...prev.completedPhases, phaseId].sort((a, b) => a - b),
+    if (isAlreadyComplete) {
+      updateProgress((prev) => ({
+        ...prev,
+        completedPhases: prev.completedPhases.filter((id) => id !== phaseId)
+      }));
+      return;
+    }
+
+    // Completing also checks every exit criterion and records activity for the streak.
+    handleUpdateData((prev) => {
+      const current = prev.progressByPlan[activePlan.id] ?? emptyPlanProgress();
+      const phase = activePlan.phases.find((p) => p.id === phaseId);
+      const withCompletion: AppData = {
+        ...prev,
+        progressByPlan: {
+          ...prev.progressByPlan,
+          [activePlan.id]: {
+            ...current,
+            completedPhases: [...current.completedPhases, phaseId].sort((a, b) => a - b),
             criteriaChecked: Object.fromEntries(
-              ROADMAP_DATA.find((p) => p.id === phaseId)!.exit.map((_, i) => [
-                `${phaseId}_${i}`,
-                true
-              ])
+              (phase?.exit ?? []).map((_, i) => [`${phaseId}_${i}`, true])
             )
-          },
-          phaseId,
-          0
-        );
-      }
-
-      return next;
+          }
+        }
+      };
+      return logStudyActivity(withCompletion, activePlan.id, phaseId, 0);
     });
   };
 
   const handleSaveNote = (phaseId: number, note: string) => {
-    handleUpdateState((prev) => ({
+    updateProgress((prev) => ({
       ...prev,
       userNotes: {
         ...prev.userNotes,
@@ -158,15 +190,18 @@ export default function App() {
     }));
   };
 
+  const handleLogStudySession = (minutes: number) => {
+    if (!activePhase) return;
+    handleStateReload(logStudyActivity(appData, activePlan.id, activePhase.id, minutes));
+  };
+
   const handleSelectConcept = (concept: string) => {
-    setFilter({
-      part: 'ALL',
-      searchQuery: concept
-    });
+    setFilter({ section: 'ALL', searchQuery: concept });
   };
 
   const handleJumpToActive = () => {
-    setFilter((prev) => ({ ...prev, part: 'ALL', searchQuery: '' }));
+    if (!activePhase) return;
+    setFilter((prev) => ({ ...prev, section: 'ALL', searchQuery: '' }));
     setOpenCardId(activePhase.id);
 
     setTimeout(() => {
@@ -190,21 +225,24 @@ export default function App() {
   };
 
   const filteredPhases = useMemo(() => {
-    return ROADMAP_DATA.filter((p) => {
-      if (filter.part !== 'ALL') {
-        if (filter.part === 'DENSE' && !p.dense) return false;
-        if (filter.part === 'INCOMPLETE' && userState.completedPhases.includes(p.id)) return false;
-        if (filter.part === 'COMPLETED' && !userState.completedPhases.includes(p.id)) return false;
-        if (['A', 'B', 'C', 'D'].includes(filter.part) && p.part !== filter.part) return false;
+    return activePlan.phases.filter((p) => {
+      if (filter.section !== 'ALL') {
+        if (filter.section === 'DENSE' && !p.dense) return false;
+        if (filter.section === 'INCOMPLETE' && progress.completedPhases.includes(p.id)) return false;
+        if (filter.section === 'COMPLETED' && !progress.completedPhases.includes(p.id)) return false;
+        if (filter.section.startsWith(SECTION_FILTER_PREFIX)) {
+          const sectionId = filter.section.slice(SECTION_FILTER_PREFIX.length);
+          if (p.section !== sectionId) return false;
+        }
       }
 
       if (filter.searchQuery.trim()) {
         const q = filter.searchQuery.toLowerCase();
         return (
           p.title.toLowerCase().includes(q) ||
-          p.shortTitle.toLowerCase().includes(q) ||
-          p.what.toLowerCase().includes(q) ||
-          p.concepts.some((c) => c.toLowerCase().includes(q)) ||
+          (p.shortTitle ?? '').toLowerCase().includes(q) ||
+          (p.what ?? '').toLowerCase().includes(q) ||
+          (p.concepts ?? []).some((c) => c.toLowerCase().includes(q)) ||
           p.steps.some((s) => s.toLowerCase().includes(q)) ||
           p.exit.some((e) => e.toLowerCase().includes(q))
         );
@@ -212,59 +250,77 @@ export default function App() {
 
       return true;
     });
-  }, [filter, userState.completedPhases]);
+  }, [activePlan, filter, progress]);
 
   return (
     <div className="min-h-screen bg-page text-text pb-24">
       <Header
-        userState={userState}
+        plan={activePlan}
+        progress={progressSummary}
+        streak={appData.global.streak}
         onOpenStats={() => setShowStatsModal(true)}
-        onOpenTimer={() => setShowTimerModal(true)}
-        onOpenCheatsheet={() => setShowCheatsheetModal(true)}
+        onOpenTimer={() => hasPhases && setShowTimerModal(true)}
+        onOpenCheatsheet={
+          activePlan.cheatsheetId ? () => setShowCheatsheetModal(true) : undefined
+        }
         onOpenInstallGuide={() => setShowInstallGuideModal(true)}
         canInstallPwa={!!deferredPrompt}
         onTriggerPwaInstall={handleTriggerPwaInstall}
       />
 
-      <NotificationBanner
-        userState={userState}
-        activePhase={activePhase}
-        onUpdateState={handleUpdateState}
-      />
+      {activePhase && (
+        <NotificationBanner
+          settings={appData.settings}
+          streak={appData.global.streak}
+          activePhase={activePhase}
+          planName={activePlan.name}
+          onUpdateSettings={handleUpdateSettings}
+        />
+      )}
 
       <FilterBar
+        plan={activePlan}
         filter={filter}
         onFilterChange={setFilter}
-        completedCount={userState.completedPhases.length}
+        completedCount={progress.completedPhases.length}
       />
 
       <main className="max-w-3xl mx-auto px-4 pt-4 space-y-3">
         {/* Intro: the method */}
-        {filter.part === 'ALL' && !filter.searchQuery && filteredPhases.length > 0 && (
-          <section className="rounded-lg border border-line bg-surface p-4 sm:p-5">
-            <h2 className="text-sm font-semibold text-text">One app, learned by building it</h2>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{ROADMAP_METHOD}</p>
-            <div className="mt-3 pt-3 border-t border-line">
-              <span className="font-mono text-[11px] uppercase tracking-wider text-faint">
-                Working principle
-              </span>
-              <ol className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
-                {WORKING_PRINCIPLE.map((s, i) => (
-                  <li key={i} className="text-xs text-muted flex items-center gap-1.5">
-                    <span className="font-mono text-faint">{i + 1}</span>
-                    {s.step}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          </section>
-        )}
+        {activePlan.method &&
+          filter.section === 'ALL' &&
+          !filter.searchQuery &&
+          filteredPhases.length > 0 && (
+            <section className="rounded-lg border border-line bg-surface p-4 sm:p-5">
+              <h2 className="text-sm font-semibold text-text">One app, learned by building it</h2>
+              <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{activePlan.method}</p>
+              {activePlan.principle && activePlan.principle.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-line">
+                  <span className="font-mono text-[11px] uppercase tracking-wider text-faint">
+                    Working principle
+                  </span>
+                  <ol className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+                    {activePlan.principle.map((s, i) => (
+                      <li key={i} className="text-xs text-muted flex items-center gap-1.5">
+                        <span className="font-mono text-faint">{i + 1}</span>
+                        {s.step}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </section>
+          )}
 
         {filteredPhases.length === 0 ? (
           <div className="p-8 rounded-lg border border-line bg-surface text-center">
-            <p className="text-sm font-medium text-muted">No phases match your search.</p>
+            <p className="text-sm font-medium text-muted">
+              {hasPhases
+                ? 'No phases match your search.'
+                : 'This plan has no phases yet.'}
+            </p>
             <button
-              onClick={() => setFilter({ part: 'ALL', searchQuery: '' })}
+              onClick={() => setFilter({ section: 'ALL', searchQuery: '' })}
               className="mt-3 px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
             >
               Clear filters
@@ -275,9 +331,9 @@ export default function App() {
             <PhaseCard
               key={phase.id}
               phase={phase}
-              userState={userState}
+              progress={progress}
               isOpen={openCardId === phase.id}
-              isActive={activePhase.id === phase.id && !userState.completedPhases.includes(phase.id)}
+              isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
               onToggleOpen={() =>
                 setOpenCardId((prev) => (prev === phase.id ? null : phase.id))
               }
@@ -295,32 +351,40 @@ export default function App() {
         </footer>
       </main>
 
-      <DailyFocusBar
-        userState={userState}
-        onJumpToActive={handleJumpToActive}
-        onOpenTimer={() => setShowTimerModal(true)}
-      />
+      {activePhase && (
+        <DailyFocusBar
+          activePhase={activePhase}
+          totalPhases={activePlan.phases.length}
+          completedCount={progress.completedPhases.length}
+          onJumpToActive={handleJumpToActive}
+          onOpenTimer={() => setShowTimerModal(true)}
+        />
+      )}
 
-      {showTimerModal && (
+      {showTimerModal && activePhase && (
         <StudyTimerModal
-          userState={userState}
+          activePhase={activePhase}
           onClose={() => setShowTimerModal(false)}
-          onUpdateState={handleStateReload}
+          onLogStudy={handleLogStudySession}
         />
       )}
 
       {showStatsModal && (
         <StatsModal
-          userState={userState}
+          appData={appData}
+          plan={activePlan}
+          progress={progress}
           onClose={() => setShowStatsModal(false)}
-          onUpdateState={handleStateReload}
+          onUpdateData={handleStateReload}
         />
       )}
 
-      <GoCheatsheetModal
-        isOpen={showCheatsheetModal}
-        onClose={() => setShowCheatsheetModal(false)}
-      />
+      {showCheatsheetModal && (
+        <GoCheatsheetModal
+          isOpen={showCheatsheetModal}
+          onClose={() => setShowCheatsheetModal(false)}
+        />
+      )}
 
       <InstallGuideModal
         isOpen={showInstallGuideModal}

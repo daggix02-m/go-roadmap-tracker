@@ -1,28 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Pause, Play, RotateCcw, X } from 'lucide-react';
-import { UserState } from '../types';
-import { ROADMAP_DATA } from '../data/roadmapData';
-import { recordStudyActivity } from '../utils/storage';
+import { Phase } from '../types';
 
 interface StudyTimerModalProps {
-  userState: UserState;
+  activePhase: Phase;
   onClose: () => void;
-  onUpdateState: (newState: UserState) => void;
+  onLogStudy: (minutes: number) => void;
 }
 
 export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
-  userState,
+  activePhase,
   onClose,
-  onUpdateState
+  onLogStudy
 }) => {
   const [selectedDuration, setSelectedDuration] = useState<number>(25 * 60);
   const [timeLeft, setTimeLeft] = useState<number>(selectedDuration);
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [mode, setMode] = useState<'study' | 'break'>('study');
   const [completedSessions, setCompletedSessions] = useState<number>(0);
-
-  const activePhase =
-    ROADMAP_DATA.find((p) => !userState.completedPhases.includes(p.id)) || ROADMAP_DATA[0];
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -52,7 +47,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
     if (!isRunning) return;
     document.title = `${formatTime(timeLeft)} — Focus timer`;
     return () => {
-      document.title = 'Go Backend Roadmap Tracker';
+      document.title = 'Roadmap Tracker';
     };
   }, [timeLeft, isRunning]);
 
@@ -60,8 +55,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
     setIsRunning(false);
     if (mode === 'study') {
       const minutesStudied = Math.round(selectedDuration / 60);
-      const updated = recordStudyActivity(userState, activePhase.id, minutesStudied);
-      onUpdateState(updated);
+      onLogStudy(minutesStudied);
       setCompletedSessions((prev) => prev + 1);
 
       try {
@@ -84,7 +78,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
 
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('Focus session complete', {
-          body: `${minutesStudied} min logged for phase ${activePhase.id} — ${activePhase.shortTitle}.`,
+          body: `${minutesStudied} min logged for phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}.`,
           icon: '/icon.svg'
         });
       }
@@ -138,7 +132,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
 
         <h2 className="text-base font-semibold text-text">Focus timer</h2>
         <p className="text-xs text-muted mt-0.5 mb-5 max-w-[16rem] truncate">
-          Phase {activePhase.id} · {activePhase.shortTitle}
+          Phase {activePhase.id} · {activePhase.shortTitle ?? activePhase.title}
         </p>
 
         {/* Presets */}

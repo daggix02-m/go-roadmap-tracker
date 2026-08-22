@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Bell, BellOff, Check, Clock, Send, X } from 'lucide-react';
-import { Phase, UserState } from '../types';
+import { AppSettings, Phase } from '../types';
+import { REMINDER_TIME_OPTIONS, formatTime } from '../utils/time';
 import {
   isNotificationSupported,
   requestNotificationPermission,
@@ -8,31 +9,24 @@ import {
 } from '../utils/notifications';
 
 interface NotificationBannerProps {
-  userState: UserState;
+  settings: AppSettings;
+  streak: number;
   activePhase: Phase;
-  onUpdateState: (updater: (prev: UserState) => UserState) => void;
+  planName: string;
+  onUpdateSettings: (updater: (prev: AppSettings) => AppSettings) => void;
 }
 
-/** Every 30-minute slot of the day, stored as "HH:MM" (24h) for the scheduler. */
-const REMINDER_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
-  const hours = String(Math.floor(i / 2)).padStart(2, '0');
-  const minutes = i % 2 === 0 ? '00' : '30';
-  return `${hours}:${minutes}`;
-});
-
-/** "21:30" -> "9:30 PM" */
-function formatTime12(hhmm: string): string {
-  const [h, m] = hhmm.split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
-  const period = h >= 12 ? 'PM' : 'AM';
-  const hour12 = h % 12 === 0 ? 12 : h % 12;
-  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
-}
+const toggleButtonClass = (isActive: boolean) =>
+  `px-1.5 py-0.5 rounded font-mono text-[10px] transition-colors cursor-pointer ${
+    isActive ? 'bg-text text-page' : 'text-muted hover:text-text'
+  }`;
 
 export const NotificationBanner: React.FC<NotificationBannerProps> = ({
-  userState,
+  settings,
+  streak,
   activePhase,
-  onUpdateState
+  planName,
+  onUpdateSettings
 }) => {
   const [isDismissed, setIsDismissed] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -60,17 +54,14 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     setPermission(res);
 
     if (res === 'granted') {
-      onUpdateState((prev) => ({
-        ...prev,
-        dailyReminderEnabled: true
-      }));
-      sendTestNotification(activePhase, userState.streak);
+      onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
+      sendTestNotification(activePhase, streak, planName);
     }
   };
 
   const handleTestNotification = () => {
     setIsTesting(true);
-    const sent = sendTestNotification(activePhase, userState.streak);
+    const sent = sendTestNotification(activePhase, streak, planName);
     if (sent) {
       setTestSuccess(true);
       setTimeout(() => setTestSuccess(false), 3000);
@@ -82,13 +73,14 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
 
   const handleTimeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newTime = e.target.value;
-    onUpdateState((prev) => ({
-      ...prev,
-      dailyReminderTime: newTime
-    }));
+    onUpdateSettings((prev) => ({ ...prev, dailyReminderTime: newTime }));
   };
 
-  const isEnabled = permission === 'granted' && userState.dailyReminderEnabled;
+  const handleFormatChange = (format: '12h' | '24h') => {
+    onUpdateSettings((prev) => ({ ...prev, timeFormat: format }));
+  };
+
+  const isEnabled = permission === 'granted' && settings.dailyReminderEnabled;
 
   return (
     <div className="max-w-3xl mx-auto px-4 mt-4">
@@ -105,7 +97,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
             <p className="font-medium text-text">Daily reminder</p>
             <p className="text-xs text-muted leading-relaxed">
               {isEnabled
-                ? `Scheduled for ${formatTime12(userState.dailyReminderTime)}. Next up: phase ${activePhase.id} — ${activePhase.shortTitle}.`
+                ? `Scheduled for ${formatTime(settings.dailyReminderTime, settings.timeFormat)}. Next up: phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}.`
                 : 'Get a daily nudge to keep your streak alive.'}
             </p>
           </div>
@@ -118,22 +110,46 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
                 <Clock className="w-3.5 h-3.5 text-muted" />
                 <select
                   aria-label="Daily reminder time"
-                  value={userState.dailyReminderTime}
+                  value={settings.dailyReminderTime}
                   onChange={handleTimeChange}
                   className="bg-transparent text-text text-xs focus:outline-none cursor-pointer font-mono"
                 >
                   {/* Fallback for any stored value outside the 30-min grid */}
-                  {!REMINDER_TIME_OPTIONS.includes(userState.dailyReminderTime) && (
-                    <option value={userState.dailyReminderTime} className="bg-page">
-                      {formatTime12(userState.dailyReminderTime)}
+                  {!REMINDER_TIME_OPTIONS.includes(settings.dailyReminderTime) && (
+                    <option value={settings.dailyReminderTime} className="bg-page">
+                      {formatTime(settings.dailyReminderTime, settings.timeFormat)}
                     </option>
                   )}
                   {REMINDER_TIME_OPTIONS.map((time) => (
                     <option key={time} value={time} className="bg-page">
-                      {formatTime12(time)}
+                      {formatTime(time, settings.timeFormat)}
                     </option>
                   ))}
                 </select>
+
+                {/* Display format toggle */}
+                <div
+                  role="group"
+                  aria-label="Time display format"
+                  className="flex items-center gap-0.5 pl-1 ml-0.5 border-l border-line"
+                >
+                  <button
+                    onClick={() => handleFormatChange('12h')}
+                    aria-pressed={settings.timeFormat === '12h'}
+                    title="12-hour clock"
+                    className={toggleButtonClass(settings.timeFormat === '12h')}
+                  >
+                    12h
+                  </button>
+                  <button
+                    onClick={() => handleFormatChange('24h')}
+                    aria-pressed={settings.timeFormat === '24h'}
+                    title="24-hour clock"
+                    className={toggleButtonClass(settings.timeFormat === '24h')}
+                  >
+                    24h
+                  </button>
+                </div>
               </div>
 
               <button

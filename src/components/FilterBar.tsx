@@ -1,31 +1,35 @@
 import React from 'react';
 import { Search, X } from 'lucide-react';
-import { FilterState } from '../types';
-import { ROADMAP_DATA } from '../data/roadmapData';
+import { FilterState, Plan, SectionFilter } from '../types';
+import { shortenSectionTitle } from '../data/plans';
 
 interface FilterBarProps {
+  plan: Plan;
   filter: FilterState;
   onFilterChange: (newFilter: FilterState) => void;
   completedCount: number;
 }
 
-export const FilterBar: React.FC<FilterBarProps> = ({ filter, onFilterChange, completedCount }) => {
-  const totalCount = ROADMAP_DATA.length;
-  const counts = {
-    A: ROADMAP_DATA.filter((p) => p.part === 'A').length,
-    B: ROADMAP_DATA.filter((p) => p.part === 'B').length,
-    C: ROADMAP_DATA.filter((p) => p.part === 'C').length,
-    D: ROADMAP_DATA.filter((p) => p.part === 'D').length,
-    DENSE: ROADMAP_DATA.filter((p) => p.dense).length
-  };
+export const FilterBar: React.FC<FilterBarProps> = ({ plan, filter, onFilterChange, completedCount }) => {
+  const totalCount = plan.phases.length;
+  const denseCount = plan.phases.filter((p) => p.dense).length;
 
-  const filters: { key: FilterState['part']; label: string; count: number }[] = [
+  const sectionFilters: { key: SectionFilter; label: string; count: number }[] = [
+    ...plan.sections
+      .map((section) => ({
+        key: `section:${section.id}` as SectionFilter,
+        label: shortenSectionTitle(section.title),
+        count: plan.phases.filter((p) => p.section === section.id).length
+      }))
+      .filter((f) => f.count > 0)
+  ];
+
+  const filters: { key: SectionFilter; label: string; count: number }[] = [
     { key: 'ALL', label: 'All phases', count: totalCount },
-    { key: 'A', label: 'Part A', count: counts.A },
-    { key: 'B', label: 'Part B', count: counts.B },
-    { key: 'C', label: 'Part C', count: counts.C },
-    { key: 'D', label: 'Part D', count: counts.D },
-    { key: 'DENSE', label: 'Dense', count: counts.DENSE },
+    ...(denseCount > 0
+      ? [{ key: 'DENSE' as SectionFilter, label: 'Dense', count: denseCount }]
+      : []),
+    ...sectionFilters,
     { key: 'INCOMPLETE', label: 'In progress', count: totalCount - completedCount },
     { key: 'COMPLETED', label: 'Completed', count: completedCount }
   ];
@@ -64,12 +68,12 @@ export const FilterBar: React.FC<FilterBarProps> = ({ filter, onFilterChange, co
         className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar"
       >
         {filters.map((f) => {
-          const isActive = filter.part === f.key;
+          const isActive = filter.section === f.key;
           return (
             <button
               key={f.key}
               id={`filter-pill-${f.key}`}
-              onClick={() => onFilterChange({ ...filter, part: f.key })}
+              onClick={() => onFilterChange({ ...filter, section: f.key })}
               aria-pressed={isActive}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md whitespace-nowrap text-xs font-medium transition-colors cursor-pointer select-none ${
                 isActive

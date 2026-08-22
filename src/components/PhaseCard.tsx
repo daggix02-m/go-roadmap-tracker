@@ -8,11 +8,11 @@ import {
   Copy,
   Lightbulb
 } from 'lucide-react';
-import { Phase, UserState } from '../types';
+import { Phase, PlanProgress } from '../types';
 
 interface PhaseCardProps {
   phase: Phase;
-  userState: UserState;
+  progress: PlanProgress;
   isOpen: boolean;
   isActive: boolean;
   onToggleOpen: () => void;
@@ -28,7 +28,7 @@ const sectionLabelClass =
 
 export const PhaseCard: React.FC<PhaseCardProps> = ({
   phase,
-  userState,
+  progress,
   isOpen,
   isActive,
   onToggleOpen,
@@ -39,21 +39,22 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
   onSelectConcept
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
-  const [noteContent, setNoteContent] = useState(userState.userNotes[phase.id] || '');
+  const [noteContent, setNoteContent] = useState(progress.userNotes[phase.id] || '');
   const [showGateWarning, setShowGateWarning] = useState(false);
 
-  const isCompleted = userState.completedPhases.includes(phase.id);
+  const isCompleted = progress.completedPhases.includes(phase.id);
 
   const totalSteps = phase.steps.length;
   const checkedStepsCount = phase.steps.filter((_, idx) =>
-    Boolean(userState.stepChecked[`${phase.id}_${idx}`])
+    Boolean(progress.stepChecked[`${phase.id}_${idx}`])
   ).length;
 
   const exitCriteriaCount = phase.exit.length;
   const checkedCriteriaCount = phase.exit.filter((_, idx) =>
-    Boolean(userState.criteriaChecked[`${phase.id}_${idx}`])
+    Boolean(progress.criteriaChecked[`${phase.id}_${idx}`])
   ).length;
-  const allExitMet = checkedCriteriaCount === exitCriteriaCount;
+  // Phases without exit criteria are completable immediately.
+  const allExitMet = exitCriteriaCount === 0 || checkedCriteriaCount === exitCriteriaCount;
 
   const handleCopyCode = () => {
     if (!phase.codeSnippet) return;
@@ -111,9 +112,15 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap text-[11px]">
-              <span className="font-mono uppercase tracking-wide text-muted">Part {phase.part}</span>
-              <span aria-hidden className="text-line-strong">·</span>
-              <span className="text-faint">~{phase.estimatedHours}h</span>
+              <span className="font-mono uppercase tracking-wide text-muted">
+                Part {phase.section}
+              </span>
+              {phase.estimatedHours ? (
+                <>
+                  <span aria-hidden className="text-line-strong">·</span>
+                  <span className="text-faint">~{phase.estimatedHours}h</span>
+                </>
+              ) : null}
               {isActive && (
                 <span className="px-1.5 py-0.5 rounded bg-accent/15 text-accent font-medium">
                   Up next
@@ -135,13 +142,15 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
             >
               {phase.title}
             </h3>
-            <p className="mt-0.5 text-xs text-muted truncate">{phase.shortTitle}</p>
+            {phase.shortTitle && (
+              <p className="mt-0.5 text-xs text-muted truncate">{phase.shortTitle}</p>
+            )}
           </div>
         </div>
 
         {/* Right side */}
         <div className="flex items-center gap-2 shrink-0 mt-0.5">
-          {!isOpen && (
+          {!isOpen && exitCriteriaCount > 0 && (
             <span className="hidden sm:inline font-mono text-[11px] text-faint">
               {checkedCriteriaCount}/{exitCriteriaCount} exit
             </span>
@@ -156,109 +165,117 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
       {isOpen && (
         <div id={`phase-body-${phase.id}`} className="px-4 pb-4 border-t border-line">
           {/* What you'll build */}
-          <div className="pt-4">
-            <h4 className={sectionLabelClass}>What you'll build</h4>
-            <p className="text-sm text-text/90 leading-relaxed">{phase.what}</p>
-          </div>
+          {phase.what && (
+            <div className="pt-4">
+              <h4 className={sectionLabelClass}>What you'll build</h4>
+              <p className="text-sm text-text/90 leading-relaxed">{phase.what}</p>
+            </div>
+          )}
 
           {/* Concepts */}
-          <div className="mt-4">
-            <h4 className={sectionLabelClass}>Concepts</h4>
-            <div className="flex flex-wrap gap-1.5">
-              {phase.concepts.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => onSelectConcept(c)}
-                  title={`Search for "${c}"`}
-                  className="px-2 py-1 rounded-md border border-line bg-raised text-muted hover:text-text hover:border-line-strong font-mono text-xs transition-colors cursor-pointer"
-                >
-                  {c}
-                </button>
-              ))}
+          {phase.concepts && phase.concepts.length > 0 && (
+            <div className="mt-4">
+              <h4 className={sectionLabelClass}>Concepts</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {phase.concepts.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => onSelectConcept(c)}
+                    title={`Search for "${c}"`}
+                    className="px-2 py-1 rounded-md border border-line bg-raised text-muted hover:text-text hover:border-line-strong font-mono text-xs transition-colors cursor-pointer"
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Steps */}
-          <div className="mt-5">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className={`${sectionLabelClass} mb-0`}>Steps</h4>
-              <span className="font-mono text-[11px] text-faint">
-                {checkedStepsCount}/{totalSteps}
-              </span>
+          {totalSteps > 0 && (
+            <div className="mt-5">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className={`${sectionLabelClass} mb-0`}>Steps</h4>
+                <span className="font-mono text-[11px] text-faint">
+                  {checkedStepsCount}/{totalSteps}
+                </span>
+              </div>
+              <ul className="space-y-1">
+                {phase.steps.map((step, idx) => {
+                  const isDone = Boolean(progress.stepChecked[`${phase.id}_${idx}`]);
+                  return (
+                    <li key={idx}>
+                      <label className="flex items-start gap-3 p-2 -mx-2 rounded-md cursor-pointer hover:bg-hover transition-colors select-none">
+                        <input
+                          type="checkbox"
+                          checked={isDone}
+                          onChange={() => onToggleStep(phase.id, idx)}
+                          className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
+                        />
+                        <span
+                          className={`text-sm leading-relaxed ${
+                            isDone ? 'text-faint line-through' : 'text-text/90'
+                          }`}
+                        >
+                          <span className="font-mono text-faint mr-1.5 select-none">{idx + 1}.</span>
+                          {step}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <ul className="space-y-1">
-              {phase.steps.map((step, idx) => {
-                const isDone = Boolean(userState.stepChecked[`${phase.id}_${idx}`]);
-                return (
-                  <li key={idx}>
-                    <label className="flex items-start gap-3 p-2 -mx-2 rounded-md cursor-pointer hover:bg-hover transition-colors select-none">
-                      <input
-                        type="checkbox"
-                        checked={isDone}
-                        onChange={() => onToggleStep(phase.id, idx)}
-                        className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
-                      />
-                      <span
-                        className={`text-sm leading-relaxed ${
-                          isDone ? 'text-faint line-through' : 'text-text/90'
-                        }`}
-                      >
-                        <span className="font-mono text-faint mr-1.5 select-none">{idx + 1}.</span>
-                        {step}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          )}
 
           {/* Exit criteria — hard gate */}
-          <div
-            className={`mt-5 p-3.5 rounded-lg border ${
-              allExitMet ? 'border-success/40 bg-success/5' : 'border-line bg-raised'
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2 mb-2.5">
-              <h4 className={`${sectionLabelClass} mb-0`}>Exit criteria</h4>
-              <span
-                className={`font-mono text-[11px] px-1.5 py-0.5 rounded ${
-                  allExitMet
-                    ? 'text-success bg-success/10'
-                    : 'text-warning bg-warning/10'
-                }`}
-              >
-                {allExitMet ? `all ${exitCriteriaCount} met` : `${checkedCriteriaCount}/${exitCriteriaCount}`}
-              </span>
+          {exitCriteriaCount > 0 && (
+            <div
+              className={`mt-5 p-3.5 rounded-lg border ${
+                allExitMet ? 'border-success/40 bg-success/5' : 'border-line bg-raised'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-2.5">
+                <h4 className={`${sectionLabelClass} mb-0`}>Exit criteria</h4>
+                <span
+                  className={`font-mono text-[11px] px-1.5 py-0.5 rounded ${
+                    allExitMet
+                      ? 'text-success bg-success/10'
+                      : 'text-warning bg-warning/10'
+                  }`}
+                >
+                  {allExitMet ? `all ${exitCriteriaCount} met` : `${checkedCriteriaCount}/${exitCriteriaCount}`}
+                </span>
+              </div>
+              <p className="text-xs text-muted mb-2.5">
+                Hard gate — don't move on until every box is true.
+              </p>
+              <ul className="space-y-1">
+                {phase.exit.map((criteria, idx) => {
+                  const isChecked = Boolean(progress.criteriaChecked[`${phase.id}_${idx}`]);
+                  return (
+                    <li key={idx}>
+                      <label className="flex items-start gap-3 p-2 -mx-2 rounded-md cursor-pointer hover:bg-hover transition-colors select-none">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => onToggleCriteria(phase.id, idx)}
+                          className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
+                        />
+                        <span
+                          className={`text-sm leading-relaxed ${
+                            isChecked ? 'text-faint line-through' : 'text-text/90'
+                          }`}
+                        >
+                          {criteria}
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
             </div>
-            <p className="text-xs text-muted mb-2.5">
-              Hard gate — don't move on until every box is true.
-            </p>
-            <ul className="space-y-1">
-              {phase.exit.map((criteria, idx) => {
-                const isChecked = Boolean(userState.criteriaChecked[`${phase.id}_${idx}`]);
-                return (
-                  <li key={idx}>
-                    <label className="flex items-start gap-3 p-2 -mx-2 rounded-md cursor-pointer hover:bg-hover transition-colors select-none">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => onToggleCriteria(phase.id, idx)}
-                        className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
-                      />
-                      <span
-                        className={`text-sm leading-relaxed ${
-                          isChecked ? 'text-faint line-through' : 'text-text/90'
-                        }`}
-                      >
-                        {criteria}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+          )}
 
           {/* Pro tip */}
           {phase.proTip && (
@@ -272,7 +289,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
           {phase.codeSnippet && (
             <div className="mt-4 rounded-lg border border-line overflow-hidden">
               <div className="flex items-center justify-between px-3 py-2 bg-raised border-b border-line">
-                <span className="font-mono text-[11px] text-muted">Go</span>
+                <span className="font-mono text-[11px] text-muted">{phase.codeLanguage || 'Code'}</span>
                 <button
                   onClick={handleCopyCode}
                   className="flex items-center gap-1 px-2 py-1 rounded text-xs text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer font-mono"

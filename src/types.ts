@@ -1,41 +1,3 @@
-export type RoadmapPart = 'A' | 'B' | 'C' | 'D';
-
-export interface Phase {
-  id: number;
-  part: RoadmapPart;
-  partTitle: string;
-  title: string;
-  shortTitle: string;
-  dense: boolean; // Marked harder/denser in the roadmap
-  what: string;
-  estimatedHours: number;
-  concepts: string[];
-  docLinks?: { title: string; url: string }[];
-  steps: string[];
-  exit: string[];
-  proTip?: string;
-  codeSnippet?: string;
-}
-
-export interface UserState {
-  completedPhases: number[];
-  criteriaChecked: Record<string, boolean>; // key: `${phaseId}_${criteriaIdx}`
-  stepChecked: Record<string, boolean>; // key: `${phaseId}_${stepIdx}`
-  userNotes: Record<number, string>; // phaseId -> notes/snippets
-  streak: number;
-  lastActiveDate: string | null; // YYYY-MM-DD
-  historyDates: string[]; // List of active days
-  dailyReminderEnabled: boolean;
-  dailyReminderTime: string; // HH:MM (e.g. "09:00", "20:00")
-  lastStudiedPhaseId: number | null;
-  totalStudyMinutes: number;
-}
-
-export interface FilterState {
-  part: 'ALL' | RoadmapPart | 'DENSE' | 'INCOMPLETE' | 'COMPLETED';
-  searchQuery: string;
-}
-
 // ---------------------------------------------------------------------------
 // Multi-plan model (v2)
 // ---------------------------------------------------------------------------
@@ -49,7 +11,7 @@ export interface PlanSection {
 }
 
 /** Generic phase — most curriculum fields are optional so simple checklist-style plans work too. */
-export interface PlanPhase {
+export interface Phase {
   id: number;
   section: string;
   title: string;
@@ -80,7 +42,7 @@ export interface Plan {
   cheatsheetId?: string;
   builtIn?: boolean;
   sections: PlanSection[];
-  phases: PlanPhase[];
+  phases: Phase[];
 }
 
 /** Per-plan progress. Keys like `${phaseId}_${idx}` are scoped inside one plan. */
@@ -94,7 +56,9 @@ export interface PlanProgress {
 
 export interface AppSettings {
   dailyReminderEnabled: boolean;
-  dailyReminderTime: string; // HH:MM 24h — displayed as 12h in the UI
+  dailyReminderTime: string; // HH:MM 24h internally
+  /** How times are displayed in the UI. */
+  timeFormat: '12h' | '24h';
 }
 
 /** Streak/history shared across all plans. */
@@ -113,4 +77,24 @@ export interface AppData {
   settings: AppSettings;
   global: GlobalActivity;
   progressByPlan: Record<string, PlanProgress>;
+}
+
+/**
+ * Section filter values:
+ *  - 'ALL'
+ *  - 'DENSE' | 'INCOMPLETE' | 'COMPLETED'  (special views)
+ *  - 'section:<id>'                        (one plan section)
+ */
+export type SectionFilter =
+  | 'ALL'
+  | 'DENSE'
+  | 'INCOMPLETE'
+  | 'COMPLETED'
+  | `section:${string}`;
+
+export const SECTION_FILTER_PREFIX = 'section:';
+
+export interface FilterState {
+  section: SectionFilter;
+  searchQuery: string;
 }

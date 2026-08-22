@@ -1,14 +1,22 @@
 import React from 'react';
 import { Timer, TerminalSquare, BarChart3, Download, Flame } from 'lucide-react';
-import { UserState } from '../types';
-import { ROADMAP_DATA } from '../data/roadmapData';
-import { getProgressSummary } from '../data/progress';
+import { AccentColor, Plan } from '../types';
+import { ProgressSummary } from '../data/progress';
+
+const ACCENT_BAR_CLASS: Record<AccentColor, string> = {
+  accent: 'bg-accent',
+  success: 'bg-success',
+  warning: 'bg-warning',
+  danger: 'bg-danger'
+};
 
 interface HeaderProps {
-  userState: UserState;
+  plan: Plan;
+  progress: ProgressSummary;
+  streak: number;
   onOpenStats: () => void;
   onOpenTimer: () => void;
-  onOpenCheatsheet: () => void;
+  onOpenCheatsheet?: () => void;
   onOpenInstallGuide: () => void;
   canInstallPwa: boolean;
   onTriggerPwaInstall: () => void;
@@ -18,7 +26,9 @@ const iconButtonClass =
   'p-2 rounded-md border border-line text-muted hover:text-text hover:bg-hover hover:border-line-strong transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium';
 
 export const Header: React.FC<HeaderProps> = ({
-  userState,
+  plan,
+  progress,
+  streak,
   onOpenStats,
   onOpenTimer,
   onOpenCheatsheet,
@@ -26,8 +36,6 @@ export const Header: React.FC<HeaderProps> = ({
   canInstallPwa,
   onTriggerPwaInstall
 }) => {
-  const progress = getProgressSummary(userState);
-
   return (
     <header className="sticky top-0 z-40 bg-page/90 backdrop-blur-md border-b border-line">
       <div className="max-w-3xl mx-auto px-4 py-3">
@@ -35,22 +43,24 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Wordmark */}
           <div className="min-w-0">
             <h1 className="text-sm font-semibold text-text tracking-tight truncate">
-              Go Backend Roadmap
+              {plan.name}
               <span className="ml-2 font-mono text-[11px] font-normal text-faint">
                 {progress.completedPhases}/{progress.totalPhases}
               </span>
             </h1>
-            <p className="text-[11px] text-muted truncate">Foundations to production</p>
+            {plan.description && (
+              <p className="text-[11px] text-muted truncate">{plan.description}</p>
+            )}
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0">
             <div
               className="flex items-center gap-1 px-2 py-1 rounded-md border border-line text-xs font-medium text-warning"
-              title={`${userState.streak}-day streak`}
+              title={`${streak}-day streak`}
             >
               <Flame className="w-3.5 h-3.5" />
-              <span className="font-mono">{userState.streak}d</span>
+              <span className="font-mono">{streak}d</span>
             </div>
 
             <button id="header-timer-btn" onClick={onOpenTimer} className={iconButtonClass} title="Focus timer">
@@ -58,15 +68,17 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="hidden md:inline">Timer</span>
             </button>
 
-            <button
-              id="header-cheatsheet-btn"
-              onClick={onOpenCheatsheet}
-              className={iconButtonClass}
-              title="Go cheatsheet"
-            >
-              <TerminalSquare className="w-4 h-4" />
-              <span className="hidden md:inline">Cheatsheet</span>
-            </button>
+            {onOpenCheatsheet && (
+              <button
+                id="header-cheatsheet-btn"
+                onClick={onOpenCheatsheet}
+                className={iconButtonClass}
+                title={`${plan.name} cheatsheet`}
+              >
+                <TerminalSquare className="w-4 h-4" />
+                <span className="hidden md:inline">Cheatsheet</span>
+              </button>
+            )}
 
             <button id="header-stats-btn" onClick={onOpenStats} className={iconButtonClass} title="Progress stats">
               <BarChart3 className="w-4 h-4" />
@@ -103,11 +115,11 @@ export const Header: React.FC<HeaderProps> = ({
             aria-valuenow={progress.overallPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Roadmap progress"
+            aria-label="Plan progress"
             className="h-1 w-full rounded-full bg-raised overflow-hidden"
           >
             <div
-              className="h-full bg-accent transition-all duration-500 ease-out"
+              className={`h-full ${ACCENT_BAR_CLASS[plan.accent]} transition-all duration-500 ease-out`}
               style={{ width: `${progress.overallPercent}%` }}
             />
           </div>

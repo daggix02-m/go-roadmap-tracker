@@ -1,24 +1,23 @@
 import React from 'react';
 import { ArrowUpRight, Timer, CircleCheck } from 'lucide-react';
-import { UserState } from '../types';
-import { ROADMAP_DATA } from '../data/roadmapData';
+import { Phase } from '../types';
 
 interface DailyFocusBarProps {
-  userState: UserState;
+  activePhase: Phase;
+  totalPhases: number;
+  completedCount: number;
   onJumpToActive: () => void;
   onOpenTimer: () => void;
 }
 
 export const DailyFocusBar: React.FC<DailyFocusBarProps> = ({
-  userState,
+  activePhase,
+  totalPhases,
+  completedCount,
   onJumpToActive,
   onOpenTimer
 }) => {
-  const activePhase =
-    ROADMAP_DATA.find((p) => !userState.completedPhases.includes(p.id)) ||
-    ROADMAP_DATA[ROADMAP_DATA.length - 1];
-
-  const isAllComplete = userState.completedPhases.length === ROADMAP_DATA.length;
+  const isAllComplete = completedCount >= totalPhases;
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-30 bg-page/95 backdrop-blur-md border-t border-line safe-bottom">
@@ -37,10 +36,10 @@ export const DailyFocusBar: React.FC<DailyFocusBarProps> = ({
           </span>
           <span className="min-w-0">
             <span className="block font-mono text-[10px] uppercase tracking-wider text-faint">
-              {isAllComplete ? 'Roadmap complete' : 'Current phase'}
+              {isAllComplete ? 'Plan complete' : 'Current phase'}
             </span>
             <span className="block text-xs sm:text-sm font-medium text-text truncate group-hover:text-accent transition-colors">
-              {isAllComplete ? 'All 29 phases completed' : `${activePhase.shortTitle}`}
+              {isAllComplete ? `All ${totalPhases} phases completed` : `${activePhase.shortTitle ?? activePhase.title}`}
             </span>
           </span>
         </button>
