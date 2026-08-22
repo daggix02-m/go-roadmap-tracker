@@ -13,6 +13,22 @@ interface NotificationBannerProps {
   onUpdateState: (updater: (prev: UserState) => UserState) => void;
 }
 
+/** Every 30-minute slot of the day, stored as "HH:MM" (24h) for the scheduler. */
+const REMINDER_TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => {
+  const hours = String(Math.floor(i / 2)).padStart(2, '0');
+  const minutes = i % 2 === 0 ? '00' : '30';
+  return `${hours}:${minutes}`;
+});
+
+/** "21:30" -> "9:30 PM" */
+function formatTime12(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return hhmm;
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, '0')} ${period}`;
+}
+
 export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   userState,
   activePhase,
@@ -89,7 +105,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
             <p className="font-medium text-text">Daily reminder</p>
             <p className="text-xs text-muted leading-relaxed">
               {isEnabled
-                ? `Scheduled for ${userState.dailyReminderTime}. Next up: phase ${activePhase.id} — ${activePhase.shortTitle}.`
+                ? `Scheduled for ${formatTime12(userState.dailyReminderTime)}. Next up: phase ${activePhase.id} — ${activePhase.shortTitle}.`
                 : 'Get a daily nudge to keep your streak alive.'}
             </p>
           </div>
@@ -106,12 +122,17 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
                   onChange={handleTimeChange}
                   className="bg-transparent text-text text-xs focus:outline-none cursor-pointer font-mono"
                 >
-                  <option value="08:00" className="bg-page">08:00</option>
-                  <option value="09:00" className="bg-page">09:00</option>
-                  <option value="12:00" className="bg-page">12:00</option>
-                  <option value="18:00" className="bg-page">18:00</option>
-                  <option value="20:00" className="bg-page">20:00</option>
-                  <option value="21:30" className="bg-page">21:30</option>
+                  {/* Fallback for any stored value outside the 30-min grid */}
+                  {!REMINDER_TIME_OPTIONS.includes(userState.dailyReminderTime) && (
+                    <option value={userState.dailyReminderTime} className="bg-page">
+                      {formatTime12(userState.dailyReminderTime)}
+                    </option>
+                  )}
+                  {REMINDER_TIME_OPTIONS.map((time) => (
+                    <option key={time} value={time} className="bg-page">
+                      {formatTime12(time)}
+                    </option>
+                  ))}
                 </select>
               </div>
 
