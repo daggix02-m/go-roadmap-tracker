@@ -25,7 +25,7 @@ export function getNotificationPermission(): NotificationPermission {
 export function sendDailyReminderNotification(
   activePhase: Phase,
   streak: number,
-  planName = 'Roadmap'
+  planName = 'Plan'
 ): boolean {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
@@ -59,7 +59,7 @@ export function sendDailyReminderNotification(
   }
 }
 
-export function sendTestNotification(activePhase: Phase, streak: number, planName = 'Roadmap'): boolean {
+export function sendTestNotification(activePhase: Phase, streak: number, planName = 'Plan'): boolean {
   if (!isNotificationSupported() || Notification.permission !== 'granted') {
     return false;
   }

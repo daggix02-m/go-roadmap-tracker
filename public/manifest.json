@@ -1,7 +1,7 @@
 {
-  "name": "Go Backend Roadmap Tracker",
-  "short_name": "Go Roadmap",
-  "description": "Track your path through a 29-phase Go backend roadmap — from toolchain fundamentals to a production deployment and capstone.",
+  "name": "Plan Tracker",
+  "short_name": "Plans",
+  "description": "Track progress through any roadmap or plan — build your own phases, steps, and exit criteria.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

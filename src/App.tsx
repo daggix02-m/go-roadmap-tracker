@@ -489,6 +489,7 @@ export default function App() {
       {showTimerModal && activePhase && (
         <StudyTimerModal
           activePhase={activePhase}
+          baseTitle={`${activePlan.name} Tracker`}
           onClose={() => setShowTimerModal(false)}
           onLogStudy={handleLogStudySession}
         />

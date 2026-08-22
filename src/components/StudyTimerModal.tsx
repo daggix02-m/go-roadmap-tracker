@@ -4,12 +4,14 @@ import { Phase } from '../types';
 
 interface StudyTimerModalProps {
   activePhase: Phase;
+  baseTitle: string;
   onClose: () => void;
   onLogStudy: (minutes: number) => void;
 }
 
 export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
   activePhase,
+  baseTitle,
   onClose,
   onLogStudy
 }) => {
@@ -47,9 +49,9 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
     if (!isRunning) return;
     document.title = `${formatTime(timeLeft)} — Focus timer`;
     return () => {
-      document.title = 'Roadmap Tracker';
+      document.title = baseTitle;
     };
-  }, [timeLeft, isRunning]);
+  }, [timeLeft, isRunning, baseTitle]);
 
   const handleTimerComplete = () => {
     setIsRunning(false);
