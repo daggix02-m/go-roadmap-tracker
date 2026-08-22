@@ -10,9 +10,11 @@ import { GoCheatsheetModal } from './components/GoCheatsheetModal';
 import { InstallGuideModal } from './components/InstallGuideModal';
 import { AppData, AppSettings, FilterState, PlanProgress, SECTION_FILTER_PREFIX } from './types';
 import { loadAppData, saveAppData, logStudyActivity, emptyPlanProgress } from './utils/storage';
-import { getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
+import { BUILT_IN_PLANS, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
+import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
 import { sendDailyReminderNotification } from './utils/notifications';
+import { PlanSwitcher } from './components/PlanSwitcher';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -199,6 +201,79 @@ export default function App() {
     setFilter({ section: 'ALL', searchQuery: concept });
   };
 
+  // --- Plan management -----------------------------------------------------
+
+  const handleSelectPlan = (planId: string) => {
+    setFilter({ section: 'ALL', searchQuery: '' });
+    setOpenCardId(null);
+    handleUpdateData((prev) => ({ ...prev, activePlanId: planId }));
+  };
+
+  const handleForkPlan = (planId: string) => {
+    handleUpdateData((prev) => {
+      const source = getAllPlans(prev).find((p) => p.id === planId);
+      if (!source) return prev;
+      const newId = generatePlanId();
+      const { plan, progress: forkedProgress } = forkPlan(source, getPlanProgress(prev, planId), newId);
+      return {
+        ...prev,
+        customPlans: [...prev.customPlans, plan],
+        progressByPlan: { ...prev.progressByPlan, [newId]: forkedProgress },
+        activePlanId: newId
+      };
+    });
+    setFilter({ section: 'ALL', searchQuery: '' });
+    setOpenCardId(null);
+  };
+
+  const handleDeletePlan = (planId: string) => {
+    const target = getAllPlans(appData).find((p) => p.id === planId);
+    if (!target || target.builtIn) return;
+    if (!window.confirm(`Delete "${target.name}" and its progress? This cannot be undone.`)) {
+      return;
+    }
+    handleUpdateData((prev) => {
+      const nextProgress = { ...prev.progressByPlan };
+      delete nextProgress[planId];
+      return {
+        ...prev,
+        customPlans: prev.customPlans.filter((p) => p.id !== planId),
+        progressByPlan: nextProgress,
+        activePlanId:
+          prev.activePlanId === planId ? BUILT_IN_PLANS[0].id : prev.activePlanId
+      };
+    });
+  };
+
+  const handleImportPlanFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        // Accept both bare plan files ({name, phases...}) and exports ({type:'plan', plan:{...}})
+        const candidate =
+          parsed && typeof parsed === 'object' && parsed.type === 'plan' && parsed.plan
+            ? parsed.plan
+            : parsed;
+        const plan = validatePlan(candidate);
+        if (!plan) {
+          alert('Invalid plan file format.');
+          return;
+        }
+        handleUpdateData((prev) => ({
+          ...prev,
+          customPlans: [...prev.customPlans, plan],
+          activePlanId: plan.id
+        }));
+        setFilter({ section: 'ALL', searchQuery: '' });
+        setOpenCardId(null);
+      } catch {
+        alert('Failed to parse plan file.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
   const handleJumpToActive = () => {
     if (!activePhase) return;
     setFilter((prev) => ({ ...prev, section: 'ALL', searchQuery: '' }));
@@ -258,6 +333,17 @@ export default function App() {
         plan={activePlan}
         progress={progressSummary}
         streak={appData.global.streak}
+        titleNode={
+          <PlanSwitcher
+            plans={getAllPlans(appData)}
+            activePlanId={activePlan.id}
+            progressByPlan={appData.progressByPlan}
+            onSelect={handleSelectPlan}
+            onFork={handleForkPlan}
+            onDelete={handleDeletePlan}
+            onImportFile={handleImportPlanFile}
+          />
+        }
         onOpenStats={() => setShowStatsModal(true)}
         onOpenTimer={() => hasPhases && setShowTimerModal(true)}
         onOpenCheatsheet={

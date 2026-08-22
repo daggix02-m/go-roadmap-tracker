@@ -14,6 +14,8 @@ interface HeaderProps {
   plan: Plan;
   progress: ProgressSummary;
   streak: number;
+  /** Replaces the static wordmark (used by the plan switcher). */
+  titleNode?: React.ReactNode;
   onOpenStats: () => void;
   onOpenTimer: () => void;
   onOpenCheatsheet?: () => void;
@@ -29,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   plan,
   progress,
   streak,
+  titleNode,
   onOpenStats,
   onOpenTimer,
   onOpenCheatsheet,
@@ -40,16 +43,20 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="sticky top-0 z-40 bg-page/90 backdrop-blur-md border-b border-line">
       <div className="max-w-3xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          {/* Wordmark */}
+          {/* Wordmark / switcher */}
           <div className="min-w-0">
-            <h1 className="text-sm font-semibold text-text tracking-tight truncate">
-              {plan.name}
-              <span className="ml-2 font-mono text-[11px] font-normal text-faint">
-                {progress.completedPhases}/{progress.totalPhases}
-              </span>
-            </h1>
-            {plan.description && (
-              <p className="text-[11px] text-muted truncate">{plan.description}</p>
+            {titleNode ?? (
+              <>
+                <h1 className="text-sm font-semibold text-text tracking-tight truncate">
+                  {plan.name}
+                  <span className="ml-2 font-mono text-[11px] font-normal text-faint">
+                    {progress.completedPhases}/{progress.totalPhases}
+                  </span>
+                </h1>
+                {plan.description && (
+                  <p className="text-[11px] text-muted truncate">{plan.description}</p>
+                )}
+              </>
             )}
           </div>
 
