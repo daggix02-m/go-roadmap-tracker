@@ -1,0 +1,6 @@
+{
+  "name": "Go Roadmap Tracker",
+  "description": "Mobile-first PWA learning journey tracker for mastering backend Go, featuring 29 structured roadmap phases, exit criteria gates, streak counter, daily reminders, and offline capability.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
