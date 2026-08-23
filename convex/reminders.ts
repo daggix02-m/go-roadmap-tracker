@@ -139,6 +139,7 @@ export const advanceSchedule = internalMutation({
     const sched = await ctx.db
       .query('reminderSchedule')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .order('desc')
       .first();
     if (!sched) return;
     const next = nextSlotAfter(sched.tz, args.now);
@@ -153,6 +154,7 @@ export const removeSchedule = internalMutation({
     const sched = await ctx.db
       .query('reminderSchedule')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .order('desc')
       .first();
     if (sched) await ctx.db.delete(sched._id);
   }
@@ -170,7 +172,15 @@ export const getVapidKey = query({
   }
 });
 
-/** Subscribe: upsert subscription + schedule reminders every 2h (5:00–23:00 local). */
+/**
+ * Subscribe: upsert subscription + schedule reminders every 2h (5:00–23:00 local).
+ *
+ * Both upserts insert a NEW document (a pure write with no reads of the
+ * affected tables — immune to `OptimisticConcurrencyControlFailure`), then
+ * delete the previous docs for the same endpoint / user. Convex does not yet
+ * support custom `_id`s on `insert`, so this insert-then-cleanup pattern is
+ * the supported equivalent of an exception-based upsert.
+ */
 export const subscribe = mutation({
   args: {
     endpoint: v.string(),
@@ -183,38 +193,40 @@ export const subscribe = mutation({
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error('Not authenticated');
 
-    // Upsert subscription.
-    const existing = await ctx.db
+    // --- Push subscription (one per endpoint) ------------------------------
+    const subId = await ctx.db.insert('pushSubscriptions', {
+      userId,
+      endpoint: args.endpoint,
+      subscriptionJson: args.subscriptionJson
+    });
+
+    // Remove any older subscription for the same endpoint so it stays unique.
+    const olderSubs = await ctx.db
       .query('pushSubscriptions')
       .withIndex('by_endpoint', (q) => q.eq('endpoint', args.endpoint))
-      .first();
-    if (existing) {
-      await ctx.db.patch(existing._id, { userId, subscriptionJson: args.subscriptionJson });
-    } else {
-      await ctx.db.insert('pushSubscriptions', {
-        userId,
-        endpoint: args.endpoint,
-        subscriptionJson: args.subscriptionJson
-      });
+      .collect();
+    for (const s of olderSubs) {
+      if (s._id !== subId) await ctx.db.delete(s._id);
     }
 
     // Next 2-hour reminder slot in the user's timezone (5:00–23:00).
     const nextFireAt = nextSlotAfter(args.tz, Date.now());
 
-    // Upsert schedule.
-    const sched = await ctx.db
+    // --- Reminder schedule (one per user) ---------------------------------
+    const schedId = await ctx.db.insert('reminderSchedule', {
+      userId,
+      nextFireAt,
+      tz: args.tz,
+      activePhaseLabel: args.activePhaseLabel
+    });
+
+    // Remove any older schedule for this user so it stays unique.
+    const olderScheds = await ctx.db
       .query('reminderSchedule')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .first();
-    if (sched) {
-      await ctx.db.patch(sched._id, { nextFireAt, tz: args.tz, activePhaseLabel: args.activePhaseLabel });
-    } else {
-      await ctx.db.insert('reminderSchedule', {
-        userId,
-        nextFireAt,
-        tz: args.tz,
-        activePhaseLabel: args.activePhaseLabel
-      });
+      .collect();
+    for (const s of olderScheds) {
+      if (s._id !== schedId) await ctx.db.delete(s._id);
     }
   }
 });

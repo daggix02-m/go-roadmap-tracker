@@ -59,25 +59,56 @@ export function useSync(): SyncState & SyncActions {
   // Reference to avoid stale closures in the background interval.
   const localRef = useRef<AppData>(loadAppData());
 
+  // Re-entrancy guard for syncNow. State alone can't be checked synchronously
+  // inside the callback, and the cloudSnapshot effect can re-fire mid-cycle
+  // (right after a push commits), so we need a ref.
+  const syncingRef = useRef(false);
+
+  // Serializes pushes so sign-in sync, background interval, sign-out and
+  // conflict-resolution never fire `snapshots.put` concurrently from the same
+  // tab — one of the triggers for OptimisticConcurrencyControlFailure.
+  const pushQueueRef = useRef<Promise<void>>(Promise.resolve());
+
   /** Push the given data (or current local) to Convex. */
   const pushNow = useCallback(
     async (data?: AppData) => {
       if (!isAuthenticated) return;
-      const toPush = data ?? loadAppData();
-      const now = Date.now();
-      await pushSnapshot({
-        data: toPush,
-        updatedAt: now,
-        deviceLabel: DEVICE_LABEL
-      });
-      setLastPushedAt(now);
+      const run = async () => {
+        const toPush = data ?? loadAppData();
+        const now = Date.now();
+        // Defense-in-depth: bounded retry on OCC. The server-side upsert is
+        // already conflict-free; this only covers residual cross-tab races.
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            await pushSnapshot({
+              data: toPush,
+              updatedAt: now,
+              deviceLabel: DEVICE_LABEL
+            });
+            setLastPushedAt(now);
+            return;
+          } catch (err) {
+            const isOcc =
+              err instanceof Error &&
+              err.message.includes('OptimisticConcurrencyControlFailure');
+            if (attempt === 2 || !isOcc) throw err;
+            await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+          }
+        }
+      };
+      // Chain onto the previous push so they never overlap in this tab.
+      const next = pushQueueRef.current.then(run, run);
+      pushQueueRef.current = next.catch(() => {});
+      return next;
     },
     [isAuthenticated, pushSnapshot]
   );
 
   /** Full sync cycle: pull → merge → push. */
   const syncNow = useCallback(async () => {
-    if (!isAuthenticated || pendingConflicts) return; // don't re-sync while conflicts unresolved
+    // Don't re-sync while conflicts are unresolved or a cycle is in flight.
+    if (!isAuthenticated || pendingConflicts || syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     try {
       const local = loadAppData();
@@ -86,6 +117,7 @@ export function useSync(): SyncState & SyncActions {
 
       // No cloud data yet — just push local.
       if (!remote) {
+        localStorage.setItem('plan_tracker_last_synced', JSON.stringify(local));
         await pushNow(local);
         return;
       }
@@ -98,10 +130,19 @@ export function useSync(): SyncState & SyncActions {
       const { merged, conflicts } = threeWayMerge(base, local, remoteData);
 
       if (conflicts.length === 0) {
-        // Auto-resolved — store merged, push to cloud.
+        // Auto-resolved — adopt the merged state locally and use it as the
+        // base for future merges.
         saveAppData(merged);
         localStorage.setItem('plan_tracker_last_synced', JSON.stringify(merged));
-        await pushNow(merged);
+        // Only push back if the cloud doesn't already have this state.
+        // Pushing unconditionally made the cloudSnapshot → re-sync → push
+        // cycle loop forever: every push bumps `updatedAt`, which re-fires
+        // the auto-sync effect, which pushes again — a runaway echo that
+        // also kept the read-then-write `snapshots.put` colliding with
+        // itself across tabs/devices (OptimisticConcurrencyControlFailure).
+        if (JSON.stringify(merged) !== JSON.stringify(remoteData)) {
+          await pushNow(merged);
+        }
       } else {
         // Conflicts need user decision — pause sync, show modal.
         setPendingConflicts(conflicts);
@@ -110,6 +151,7 @@ export function useSync(): SyncState & SyncActions {
         setPendingRemote(remoteData);
       }
     } finally {
+      syncingRef.current = false;
       setSyncing(false);
     }
   }, [isAuthenticated, cloudSnapshot, pushNow, pendingConflicts]);
