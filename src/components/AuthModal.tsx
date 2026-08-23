@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { X, Mail, Lock, User, Loader2, AlertCircle } from 'lucide-react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 
@@ -12,8 +12,10 @@ interface AuthModalProps {
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
   const { signIn } = useAuthActions();
   const [mode, setMode] = useState<Mode>('signIn');
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -71,13 +73,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
       setError('Password must be at least 8 characters.');
       return;
     }
+    if (mode === 'signUp' && password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
 
     setLoading(true);
     try {
       await signIn('password', {
         flow: mode === 'signUp' ? 'signUp' : 'signIn',
         email: email.trim().toLowerCase(),
-        password
+        password,
+        ...(mode === 'signUp' && name.trim() ? { name: name.trim() } : {})
       });
       onClose();
     } catch (err: unknown) {
@@ -86,7 +93,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
       // Surface meaningful errors from the auth backend.
       if (msg.includes('already exists') || msg.includes('duplicate')) {
         setError('An account with this email already exists. Try signing in.');
-      } else if (msg.includes('Invalid') || msg.includes('invalid') || msg.includes('Wrong')) {
+      } else if (
+        msg.includes('Invalid credentials') ||
+        msg.includes('Invalid password')
+      ) {
         setError('Invalid email or password.');
       } else {
         setError(msg);
@@ -131,7 +141,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             <button
               role="tab"
               aria-selected={mode === 'signIn'}
-              onClick={() => { setMode('signIn'); setError(null); }}
+              onClick={() => { setMode('signIn'); setConfirmPassword(''); setError(null); }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                 mode === 'signIn'
                   ? 'bg-accent text-page'
@@ -143,7 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             <button
               role="tab"
               aria-selected={mode === 'signUp'}
-              onClick={() => { setMode('signUp'); setError(null); }}
+              onClick={() => { setMode('signUp'); setConfirmPassword(''); setError(null); }}
               className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                 mode === 'signUp'
                   ? 'bg-accent text-page'
@@ -161,6 +171,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             <div className="mb-3 p-2.5 rounded-md border border-danger/30 bg-danger/5 flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
               <span className="text-xs text-danger leading-relaxed">{error}</span>
+            </div>
+          )}
+
+          {/* Name field (sign-up only) */}
+          {mode === 'signUp' && (
+            <div className="mb-3">
+              <label htmlFor="auth-name" className="sr-only">
+                Name (optional)
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+                <input
+                  id="auth-name"
+                  type="text"
+                  autoComplete="name"
+                  placeholder="Your name (optional)"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-md border border-line bg-raised text-text text-sm font-mono placeholder:text-faint/50 focus:outline-none focus:border-accent/60 transition-colors"
+                />
+              </div>
             </div>
           )}
 
@@ -203,6 +234,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             </div>
           </div>
 
+          {/* Confirm password field (sign-up only) */}
+          {mode === 'signUp' && (
+            <div className="mb-4">
+              <label htmlFor="auth-confirm-password" className="sr-only">
+                Confirm password
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-faint pointer-events-none" />
+                <input
+                  id="auth-confirm-password"
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder="Confirm password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2.5 rounded-md border border-line bg-raised text-text text-sm font-mono placeholder:text-faint/50 focus:outline-none focus:border-accent/60 transition-colors"
+                />
+              </div>
+            </div>
+          )}
+
           <button
             type="submit"
             disabled={loading}
@@ -226,7 +278,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             <>
               Don't have an account?{' '}
               <button
-                onClick={() => { setMode('signUp'); setError(null); }}
+                onClick={() => { setMode('signUp'); setConfirmPassword(''); setError(null); }}
                 className="text-accent hover:underline cursor-pointer"
               >
                 Create one
@@ -236,7 +288,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             <>
               Already have an account?{' '}
               <button
-                onClick={() => { setMode('signIn'); setError(null); }}
+                onClick={() => { setMode('signIn'); setConfirmPassword(''); setError(null); }}
                 className="text-accent hover:underline cursor-pointer"
               >
                 Sign in

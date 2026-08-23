@@ -36,6 +36,11 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   session: {
     totalDurationMs: 1000 * 60 * 60 * 24 * 30, // 30 days
     inactiveDurationMs: 1000 * 60 * 60 * 24 * 7 // 7 days idle
+  },
+  signIn: {
+    // Built-in brute-force protection: allow 10 failed password/OTP
+    // attempts per hour per account, then one more every ~6 minutes.
+    maxFailedAttempsPerHour: 10
   }
 });
 
@@ -43,12 +48,20 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
 // Helper queries / mutations exposed for client convenience
 // ---------------------------------------------------------------------------
 
-/** Returns the authenticated Convex user doc, or null. */
+/** Returns a minimal public profile for the authenticated user, or null. */
 export const viewer = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
-    return await ctx.db.get(userId);
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+    // Return only fields the UI needs — never the raw document (which may
+    // grow sensitive fields like tokenIdentifier in the future).
+    return {
+      email: user.email ?? null,
+      name: user.name ?? null,
+      image: user.image ?? null
+    };
   }
 });

@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Plan Tracker</title>
+    <!-- Content-Security-Policy: no third-party scripts; allow inline styles
+         (Tailwind) and connections to the Convex backend + site. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://tacit-leopard-708.convex.cloud https://tacit-leopard-708.convex.site; worker-src 'self'; manifest-src 'self'; font-src 'self' data:;"
+    />
     <meta
       name="description"
       content="Track progress through any roadmap or plan — build your own phases, steps, and exit criteria."

@@ -3,16 +3,22 @@
  * Used by the cron job and the client subscription manager.
  */
 import { getAuthUserId } from '@convex-dev/auth/server';
-import { internalAction, query, mutation } from './_generated/server';
-import { api, internal } from './_generated/api';
+import { internalAction, internalQuery, internalMutation, query, mutation } from './_generated/server';
+import { internal } from './_generated/api';
 import { v } from 'convex/values';
 
 // ---------------------------------------------------------------------------
-// Cron helpers (internal)
+// Cron helpers (internal only — not callable from clients)
 // ---------------------------------------------------------------------------
+//
+// These functions are only reachable via the `internal.*` API (i.e. from
+// server-side code such as the cron's `triggerReminders` internal action).
+// They are intentionally `internalQuery`/`internalMutation`: they accept
+// arbitrary user IDs / endpoints and contain no authorization checks, so they
+// must never be exposed to clients.
 
 /** Find all schedules where nextFireAt <= now. */
-export const getDue = query({
+export const getDue = internalQuery({
   args: { now: v.number() },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -23,7 +29,7 @@ export const getDue = query({
 });
 
 /** Get all push subscriptions for a user. */
-export const getSubscriptions = query({
+export const getSubscriptions = internalQuery({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
     return await ctx.db
@@ -34,7 +40,7 @@ export const getSubscriptions = query({
 });
 
 /** Remove a stale subscription by endpoint. */
-export const removeSubscription = mutation({
+export const removeSubscription = internalMutation({
   args: { endpoint: v.string() },
   handler: async (ctx, args) => {
     const sub = await ctx.db
@@ -46,7 +52,7 @@ export const removeSubscription = mutation({
 });
 
 /** Advance a schedule by +1 day (same local time). */
-export const advanceSchedule = mutation({
+export const advanceSchedule = internalMutation({
   args: { userId: v.id('users'), now: v.number() },
   handler: async (ctx, args) => {
     const sched = await ctx.db
@@ -61,7 +67,7 @@ export const advanceSchedule = mutation({
 });
 
 /** Remove schedule when no active subscriptions remain. */
-export const removeSchedule = mutation({
+export const removeSchedule = internalMutation({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
     const sched = await ctx.db
@@ -165,10 +171,10 @@ export const triggerReminders = internalAction({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-      const due = await ctx.runQuery(api.reminders.getDue, { now });
+      const due = await ctx.runQuery(internal.reminders.getDue, { now });
 
     for (const entry of due) {
-      const subs = await ctx.runQuery(api.reminders.getSubscriptions, {
+      const subs = await ctx.runQuery(internal.reminders.getSubscriptions, {
         userId: entry.userId
       });
 
@@ -184,7 +190,7 @@ export const triggerReminders = internalAction({
         });
 
         if (result.remove) {
-          await ctx.runMutation(api.reminders.removeSubscription, {
+          await ctx.runMutation(internal.reminders.removeSubscription, {
             endpoint: sub.endpoint
           });
         } else if (result.ok) {
@@ -193,12 +199,12 @@ export const triggerReminders = internalAction({
       }
 
       if (anyActive) {
-        await ctx.runMutation(api.reminders.advanceSchedule, {
+        await ctx.runMutation(internal.reminders.advanceSchedule, {
           userId: entry.userId,
           now
         });
       } else {
-        await ctx.runMutation(api.reminders.removeSchedule, {
+        await ctx.runMutation(internal.reminders.removeSchedule, {
           userId: entry.userId
         });
       }
