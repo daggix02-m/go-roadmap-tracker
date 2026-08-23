@@ -43,6 +43,10 @@ export interface Plan {
   builtIn?: boolean;
   sections: PlanSection[];
   phases: Phase[];
+  /** Tombstone flag — plan was deleted on another device. */
+  deleted?: boolean;
+  /** Epoch-ms timestamp for three-way merge LWW resolution. */
+  lastModifiedAt?: number;
 }
 
 /** Per-plan progress. Keys like `${phaseId}_${idx}` are scoped inside one plan. */
@@ -79,10 +83,14 @@ export interface GlobalActivity {
 export interface AppData {
   version: 2;
   activePlanId: string;
+  /** Timestamp of the last user action that changed activePlanId. */
+  activePlanUpdatedAt?: number;
   customPlans: Plan[];
   settings: AppSettings;
   global: GlobalActivity;
   progressByPlan: Record<string, PlanProgress>;
+  /** Epoch-ms timestamp for three-way merge LWW resolution. */
+  lastModifiedAt?: number;
 }
 
 /**
