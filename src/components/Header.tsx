@@ -1,5 +1,5 @@
-import React from 'react';
-import { Timer, TerminalSquare, BarChart3, Download, Flame } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Timer, TerminalSquare, BarChart3, Download, Flame, MoreHorizontal } from 'lucide-react';
 import { AccentColor, Plan } from '../types';
 import { ProgressSummary } from '../data/progress';
 import { AccountButton } from './AccountButton';
@@ -42,6 +42,20 @@ export const Header: React.FC<HeaderProps> = ({
   onTriggerPwaInstall,
   onOpenAuthModal
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
+
   return (
     <header className="bg-page/90 backdrop-blur-md border-b border-line">
       <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 py-3">
@@ -65,56 +79,126 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0">
+            {/* Streak — hidden on very small screens */}
             <div
-              className="flex items-center gap-1 px-2 py-1 rounded-md border border-line text-xs font-medium text-warning"
+              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md border border-line text-xs font-medium text-warning"
               title={`${streak}-day streak`}
             >
               <Flame className="w-3.5 h-3.5" />
               <span className="font-mono">{streak}d</span>
             </div>
 
-            <button id="header-timer-btn" onClick={onOpenTimer} className={iconButtonClass} title="Focus timer">
-              <Timer className="w-4 h-4" />
-              <span className="hidden md:inline">Timer</span>
-            </button>
+            {/* Desktop: show all buttons inline */}
+            <div className="hidden md:flex items-center gap-1">
+              <button id="header-timer-btn" onClick={onOpenTimer} className={iconButtonClass} title="Focus timer">
+                <Timer className="w-4 h-4" />
+                <span>Timer</span>
+              </button>
 
-            {onOpenCheatsheet && (
+              {onOpenCheatsheet && (
+                <button
+                  id="header-cheatsheet-btn"
+                  onClick={onOpenCheatsheet}
+                  className={iconButtonClass}
+                  title={`${plan.name} cheatsheet`}
+                >
+                  <TerminalSquare className="w-4 h-4" />
+                  <span>Cheatsheet</span>
+                </button>
+              )}
+
+              <button id="header-stats-btn" onClick={onOpenStats} className={iconButtonClass} title="Progress stats">
+                <BarChart3 className="w-4 h-4" />
+                <span>Stats</span>
+              </button>
+
+              {canInstallPwa ? (
+                <button
+                  id="header-install-btn"
+                  onClick={onTriggerPwaInstall}
+                  className="px-2.5 py-2 rounded-md bg-text text-page text-xs font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-85 cursor-pointer"
+                  title="Install app"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Install</span>
+                </button>
+              ) : (
+                <button
+                  id="header-guide-btn"
+                  onClick={onOpenInstallGuide}
+                  className={iconButtonClass}
+                  title="Install as app"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Mobile: overflow menu */}
+            <div className="relative md:hidden" ref={menuRef}>
               <button
-                id="header-cheatsheet-btn"
-                onClick={onOpenCheatsheet}
+                onClick={() => setMenuOpen(!menuOpen)}
                 className={iconButtonClass}
-                title={`${plan.name} cheatsheet`}
+                title="Menu"
+                aria-expanded={menuOpen}
               >
-                <TerminalSquare className="w-4 h-4" />
-                <span className="hidden md:inline">Cheatsheet</span>
+                <MoreHorizontal className="w-4 h-4" />
               </button>
-            )}
 
-            <button id="header-stats-btn" onClick={onOpenStats} className={iconButtonClass} title="Progress stats">
-              <BarChart3 className="w-4 h-4" />
-              <span className="hidden md:inline">Stats</span>
-            </button>
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-raised border border-line rounded-lg shadow-lg py-1 min-w-[160px]">
+                  {/* Streak on mobile */}
+                  <div className="flex items-center gap-2 px-3 py-2 text-xs text-warning border-b border-line">
+                    <Flame className="w-3.5 h-3.5" />
+                    <span className="font-mono font-medium">{streak}-day streak</span>
+                  </div>
 
-            {canInstallPwa ? (
-              <button
-                id="header-install-btn"
-                onClick={onTriggerPwaInstall}
-                className="px-2.5 py-2 rounded-md bg-text text-page text-xs font-semibold flex items-center gap-1.5 transition-opacity hover:opacity-85 cursor-pointer"
-                title="Install app"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Install</span>
-              </button>
-            ) : (
-              <button
-                id="header-guide-btn"
-                onClick={onOpenInstallGuide}
-                className={iconButtonClass}
-                title="Install as app"
-              >
-                <Download className="w-4 h-4" />
-              </button>
-            )}
+                  <button
+                    onClick={() => { onOpenTimer(); setMenuOpen(false); }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                  >
+                    <Timer className="w-4 h-4 text-muted" />
+                    Focus Timer
+                  </button>
+
+                  {onOpenCheatsheet && (
+                    <button
+                      onClick={() => { onOpenCheatsheet(); setMenuOpen(false); }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                    >
+                      <TerminalSquare className="w-4 h-4 text-muted" />
+                      Cheatsheet
+                    </button>
+                  )}
+
+                  <button
+                    onClick={() => { onOpenStats(); setMenuOpen(false); }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                  >
+                    <BarChart3 className="w-4 h-4 text-muted" />
+                    Stats
+                  </button>
+
+                  {canInstallPwa ? (
+                    <button
+                      onClick={() => { onTriggerPwaInstall(); setMenuOpen(false); }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-muted" />
+                      Install App
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { onOpenInstallGuide(); setMenuOpen(false); }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-muted" />
+                      Install Guide
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="w-px h-5 bg-line ml-1" aria-hidden="true" />
             <AccountButton onOpenAuthModal={onOpenAuthModal} />
