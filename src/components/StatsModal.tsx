@@ -71,6 +71,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               }
             },
             global: {
+              ...appData.global,
               streak: typeof parsed.streak === 'number' ? parsed.streak : appData.global.streak,
               lastActiveDate: parsed.lastActiveDate ?? appData.global.lastActiveDate,
               historyDates: Array.isArray(parsed.historyDates)
