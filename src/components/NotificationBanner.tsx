@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, BellOff, Check, Clock, Send } from 'lucide-react';
+import { Bell, BellOff, Check, Clock, Download, Send } from 'lucide-react';
 import { AppSettings, Phase } from '../types';
 import { REMINDER_TIME_OPTIONS, formatTime } from '../utils/time';
 import {
@@ -7,6 +7,7 @@ import {
   requestNotificationPermission,
   sendTestNotification
 } from '../utils/notifications';
+import { usePushSubscription } from '../utils/usePushSubscription';
 
 interface NotificationBannerProps {
   settings: AppSettings;
@@ -14,6 +15,7 @@ interface NotificationBannerProps {
   activePhase: Phase;
   planName: string;
   onUpdateSettings: (updater: (prev: AppSettings) => AppSettings) => void;
+  onOpenInstallGuide: () => void;
 }
 
 const toggleButtonClass = (isActive: boolean) =>
@@ -26,7 +28,8 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   streak,
   activePhase,
   planName,
-  onUpdateSettings
+  onUpdateSettings,
+  onOpenInstallGuide
 }) => {
   const [isTesting, setIsTesting] = useState(false);
   const [testSuccess, setTestSuccess] = useState(false);
@@ -37,20 +40,31 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     return 'default';
   });
 
+  const push = usePushSubscription();
   const supported = isNotificationSupported();
 
   const handleEnableNotification = async () => {
-    if (!supported) {
-      alert('Web Notifications are not supported in this browser. You can still track progress.');
-      return;
+    // iOS non-installed → guide to install first.
+    if (push.needsInstall) {
+      return; // The install prompt handles this via InstallGuideModal.
     }
 
-    const res = await requestNotificationPermission();
-    setPermission(res);
+    // Try push subscription first (works when app is closed).
+    if (push.supported && !push.subscribed) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      await push.subscribe(settings.dailyReminderTime, tz);
+    }
 
-    if (res === 'granted') {
+    // Also enable local notification permission as fallback.
+    if (supported) {
+      const res = await requestNotificationPermission();
+      setPermission(res);
+      if (res === 'granted') {
+        onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
+        sendTestNotification(activePhase, streak, planName);
+      }
+    } else {
       onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
-      sendTestNotification(activePhase, streak, planName);
     }
   };
 
@@ -163,13 +177,24 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
                 )}
               </button>
             </>
+          ) : push.needsInstall ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-warning font-medium">Install app first</span>
+              <button
+                onClick={onOpenInstallGuide}
+                className="px-2.5 py-1.5 rounded-md border border-warning/40 bg-warning/5 text-warning text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Install
+              </button>
+            </div>
           ) : (
             <button
               id="enable-notification-btn"
               onClick={handleEnableNotification}
-              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap"
+              disabled={push.loading}
+              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap disabled:opacity-50"
             >
-              Enable reminders
+              {push.loading ? 'Setting up…' : 'Enable reminders'}
             </button>
           )}
         </div>

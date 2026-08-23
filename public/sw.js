@@ -65,3 +65,27 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// Handle incoming push notifications (from Convex cron).
+self.addEventListener('push', (event) => {
+  if (!event.data) return;
+
+  let payload;
+  try {
+    payload = event.data.json();
+  } catch {
+    payload = { title: 'Plan Tracker', body: event.data.text() };
+  }
+
+  const title = payload.title || 'Plan Tracker';
+  const options = {
+    body: payload.body || '',
+    icon: payload.icon || '/icon-192.png',
+    badge: payload.badge || '/icon-192.png',
+    tag: payload.tag || 'daily-reminder',
+    data: payload.data || { url: '/' },
+    vibrate: [100, 50, 100]
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});

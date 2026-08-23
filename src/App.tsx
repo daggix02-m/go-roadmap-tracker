@@ -621,6 +621,7 @@ export default function App() {
           activePhase={activePhase}
           planName={activePlan.name}
           onUpdateSettings={handleUpdateSettings}
+          onOpenInstallGuide={() => setShowInstallGuideModal(true)}
         />
       )}
 
