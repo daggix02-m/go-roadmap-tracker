@@ -12,9 +12,9 @@ interface ActiveTimerBarProps {
 }
 
 /**
- * Compact strip pinned below the header while a focus timer exists and the
- * timer modal is closed. Keeps the countdown visible anywhere in the app —
- * the whole point of the background timer.
+ * Compact strip pinned below the header while a focus or step timer is
+ * active and the timer modal is closed. Keeps the countdown visible
+ * anywhere in the app — the whole point of the background timer.
  */
 export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
   timer,
@@ -27,6 +27,12 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
   const remaining = remainingSeconds(timer, nowMs);
   const running = isRunning(timer);
   const expired = remaining <= 0;
+  const kindPrefix =
+    timer.kind === 'step'
+      ? `Step ${(timer.stepIdx ?? 0) + 1} · `
+      : timer.variant === 'break'
+        ? 'Break · '
+        : 'Focus · ';
 
   return (
     <div className="bg-surface/95 backdrop-blur-md border-b border-line">
@@ -34,7 +40,7 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
         <button
           onClick={onOpenModal}
           className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
-          aria-label="Open focus timer"
+          aria-label="Open timer"
         >
           <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
             {running && !expired && (
@@ -59,8 +65,10 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
 
           <span className="text-xs text-muted truncate group-hover:text-text transition-colors">
             {expired
-              ? 'Session finished — tap to review'
-              : `${timer.variant === 'break' ? 'Break' : 'Focus'} · ${phaseLabel}`}
+              ? timer.kind === 'step'
+                ? "Time's up — tap to review"
+                : 'Session finished — tap to review'
+              : `${kindPrefix}${phaseLabel}`}
           </span>
         </button>
 

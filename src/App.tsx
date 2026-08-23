@@ -576,6 +576,34 @@ export default function App() {
               onStop={handleStopFocus}
             />
           )}
+
+        {/* Step countdown bar — jumps to the owning phase card on tap. */}
+        {timersBlob.step && !showTimerModal && (
+          <ActiveTimerBar
+            timer={timersBlob.step}
+            nowMs={nowMs}
+            phaseLabel={(() => {
+              const owner = activePlan.phases.find((p) => p.id === timersBlob.step!.phaseId);
+              return owner ? owner.shortTitle ?? owner.title : 'unknown phase';
+            })()}
+            onOpenModal={() => {
+              const pid = timersBlob.step?.phaseId;
+              if (pid === undefined) return;
+              setOpenCardId(pid);
+              requestAnimationFrame(() =>
+                document
+                  .getElementById(`phase-card-${pid}`)
+                  ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              );
+            }}
+            onToggleRun={() =>
+              timersBlob.step && isRunning(timersBlob.step)
+                ? handlePauseStepTimer()
+                : handleResumeStepTimer()
+            }
+            onStop={handleCancelStepTimer}
+          />
+        )}
       </div>
 
       {activePhase && (
