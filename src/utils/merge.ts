@@ -22,6 +22,16 @@
  * - **progressByPlan**: merge each plan's progress independently LWW.
  * - **activePlanId**: last-write-wins via `activePlanUpdatedAt`.
  *
+ * CONFLICT DETECTION
+ * ------------------
+ * Conflicts are reported base-aware: only when BOTH sides changed the same
+ * field/key since the last sync and settled on different values. Additive
+ * differences (e.g. different boxes checked on each device) merge silently —
+ * the "conflict" modal only appears for genuinely ambiguous edits. When
+ * `base` is null (first sync, or a field new since the last sync) the merge
+ * degrades to best-effort: any divergence is reported, since there is no
+ * common ancestor to disambiguate against.
+ *
  * Everything else (timers, current phase card open state, UI flags)
  * is device-local and never enters the merge.
  *
@@ -130,15 +140,57 @@ function lww<T>(local: T, remote: T, localTs?: number, remoteTs?: number): T {
 }
 
 // ---------------------------------------------------------------------------
+// Base-aware conflict helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * True when BOTH sides changed the same key since `base` and settled on
+ * different values. Used for stepChecked / criteriaChecked / userNotes /
+ * stepDurations / stepDoneDay. Additive changes (a new key set on one side
+ * only, or both sides agreeing) do NOT count as a conflict.
+ */
+function bothChangedKey(
+  base: Record<string, unknown> | undefined,
+  local: Record<string, unknown>,
+  remote: Record<string, unknown>
+): boolean {
+  const b = base ?? {};
+  for (const key of new Set([...Object.keys(local), ...Object.keys(remote)])) {
+    const bv = b[key];
+    const lv = local[key];
+    const rv = remote[key];
+    if (bv !== lv && bv !== rv && lv !== rv) return true;
+  }
+  return false;
+}
+
+/** True when BOTH sides changed the same phase's completion since `base`. */
+function bothChangedPhase(
+  base: number[] | undefined,
+  local: number[],
+  remote: number[]
+): boolean {
+  const b = new Set(base ?? []);
+  for (const phase of new Set([...local, ...remote])) {
+    if (b.has(phase) !== local.includes(phase) && b.has(phase) !== remote.includes(phase)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Merge plans
 // ---------------------------------------------------------------------------
 
 function mergePlans(
+  base: AppData | null,
   localPlans: Plan[],
   remotePlans: Plan[],
   conflicts: Conflict[]
 ): Plan[] {
   const byId = new Map<string, Plan>();
+  const basePlans = base?.customPlans ?? [];
 
   // Index local plans.
   for (const p of localPlans) byId.set(p.id, { ...p });
@@ -155,12 +207,16 @@ function mergePlans(
     // Tombstone always wins.
     if (rp.deleted && !lp.deleted) {
       byId.set(rp.id, { ...rp });
-      conflicts.push({
-        field: `plan.${rp.id}.deleted`,
-        localValue: lp.name,
-        remoteValue: rp.name,
-        message: `"${rp.name}" was deleted on another device and removed here.`
-      });
+      const basePlan = basePlans.find((p) => p.id === rp.id);
+      // Only surface the deletion if it's a change since the last sync.
+      if (!basePlan || !basePlan.deleted) {
+        conflicts.push({
+          field: `plan.${rp.id}.deleted`,
+          localValue: lp.name,
+          remoteValue: rp.name,
+          message: `"${rp.name}" was deleted on another device and removed here.`
+        });
+      }
       continue;
     }
     if (lp.deleted && !rp.deleted) {
@@ -174,6 +230,23 @@ function mergePlans(
     const remoteTs = rp.lastModifiedAt ?? 0;
     if (remoteTs > localTs) {
       Object.assign(merged, { ...rp });
+    }
+
+    // Conflict only when both devices edited the same plan since the last
+    // sync (or it has no ancestor and the two sides disagree).
+    const basePlan = basePlans.find((p) => p.id === rp.id);
+    if (basePlan) {
+      const localChanged = JSON.stringify(lp) !== JSON.stringify(basePlan);
+      const remoteChanged = JSON.stringify(rp) !== JSON.stringify(basePlan);
+      if (localChanged && remoteChanged) {
+        conflicts.push({
+          field: `plan.${rp.id}`,
+          localValue: lp.name,
+          remoteValue: rp.name,
+          message: `"${rp.name}" was edited on both devices.`
+        });
+      }
+    } else if (JSON.stringify(lp) !== JSON.stringify(rp)) {
       conflicts.push({
         field: `plan.${rp.id}`,
         localValue: lp.name,
@@ -181,6 +254,7 @@ function mergePlans(
         message: `"${rp.name}" was updated on another device.`
       });
     }
+
     byId.set(rp.id, merged);
   }
 
@@ -192,6 +266,7 @@ function mergePlans(
 // ---------------------------------------------------------------------------
 
 function mergeProgress(
+  base: AppData | null,
   localProg: Record<string, PlanProgress>,
   remoteProg: Record<string, PlanProgress>,
   conflicts: Conflict[]
@@ -218,12 +293,29 @@ function mergeProgress(
       stepDoneDay: recordLWW(lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {})
     };
 
-    if (JSON.stringify(lp) !== JSON.stringify(rp)) {
+    const bp = base?.progressByPlan?.[planId] ?? null;
+
+    // With a common ancestor, flag the plan only when both devices changed
+    // the same thing since the last sync. Without one, flag any divergence
+    // (best-effort first-sync behavior).
+    const divergent = bp
+      ? bothChangedPhase(bp.completedPhases, lp.completedPhases, rp.completedPhases) ||
+        bothChangedKey(bp.stepChecked, lp.stepChecked, rp.stepChecked) ||
+        bothChangedKey(bp.criteriaChecked, lp.criteriaChecked, rp.criteriaChecked) ||
+        bothChangedKey(bp.userNotes, lp.userNotes, rp.userNotes) ||
+        bothChangedKey(bp.stepDurations ?? {}, lp.stepDurations ?? {}, rp.stepDurations ?? {}) ||
+        bothChangedKey(bp.stepDoneDay ?? {}, lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {}) ||
+        (bp.lastStudiedPhaseId !== lp.lastStudiedPhaseId &&
+          bp.lastStudiedPhaseId !== rp.lastStudiedPhaseId &&
+          lp.lastStudiedPhaseId !== rp.lastStudiedPhaseId)
+      : JSON.stringify(lp) !== JSON.stringify(rp);
+
+    if (divergent) {
       conflicts.push({
         field: `progress.${planId}`,
         localValue: lp.completedPhases.length,
         remoteValue: rp.completedPhases.length,
-        message: `Progress on "${planId}" was updated on another device.`
+        message: `Progress on "${planId}" was changed on both devices.`
       });
     }
 
@@ -246,9 +338,9 @@ export interface MergeResult {
  * Three-way merge: `base` is the common ancestor (last-synced snapshot),
  * `local` is this device, `remote` is the cloud.
  *
- * If `base` is null (first sync), the merge degrades to a best-effort
- * union with true-wins semantics — safe because checkbox ticks and
- * completed phases are only ever additive.
+ * Conflicts are reported base-aware — only when both sides changed the same
+ * thing since the last sync. If `base` is null (first sync), the merge
+ * degrades to a best-effort union and reports any divergence.
  */
 export function threeWayMerge(
   base: AppData | null,
@@ -259,22 +351,29 @@ export function threeWayMerge(
 
   // --- settings & global ---
   const settings = lww(local.settings, remote.settings, local.lastModifiedAt, remote.lastModifiedAt);
-  if (JSON.stringify(local.settings) !== JSON.stringify(remote.settings)) {
+
+  // Conflict only when both devices changed settings since the last sync
+  // (or there is no ancestor and the two sides differ).
+  const settingsDivergent = base
+    ? JSON.stringify(base.settings) !== JSON.stringify(local.settings) &&
+      JSON.stringify(base.settings) !== JSON.stringify(remote.settings)
+    : JSON.stringify(local.settings) !== JSON.stringify(remote.settings);
+  if (settingsDivergent) {
     conflicts.push({
       field: 'settings',
       localValue: local.settings.timeFormat,
       remoteValue: remote.settings.timeFormat,
-      message: 'Settings were updated on another device.'
+      message: 'Settings were changed on both devices.'
     });
   }
 
   const globalActivity = mergeGlobal(local.global, remote.global);
 
   // --- custom plans ---
-  const customPlans = mergePlans(local.customPlans, remote.customPlans, conflicts);
+  const customPlans = mergePlans(base, local.customPlans, remote.customPlans, conflicts);
 
   // --- progress ---
-  const progressByPlan = mergeProgress(local.progressByPlan, remote.progressByPlan, conflicts);
+  const progressByPlan = mergeProgress(base, local.progressByPlan, remote.progressByPlan, conflicts);
 
   // --- active plan ---
   const activePlanId = lww(local.activePlanId, remote.activePlanId, local.activePlanUpdatedAt, remote.activePlanUpdatedAt);

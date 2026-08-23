@@ -116,7 +116,7 @@ export function useSync(): SyncState & SyncActions {
 
   /** Resolve pending conflicts. */
   const resolveConflicts = useCallback(
-    (resolution: 'local' | 'remote' | 'merge') => {
+    async (resolution: 'local' | 'remote' | 'merge') => {
       if (!pendingMerged || !pendingLocal || !pendingRemote) return;
 
       let final: AppData;
@@ -151,8 +151,14 @@ export function useSync(): SyncState & SyncActions {
 
       saveAppData(final);
       localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
-      // Push the resolved state.
-      pushNow(final);
+      // Push the resolved state and only clear the conflict once the cloud
+      // actually has it — otherwise the auto-sync can re-detect the same
+      // conflict against a stale snapshot (modal reappears and gets stuck).
+      try {
+        await pushNow(final);
+      } catch {
+        return; // push failed — keep the modal open so the user can retry
+      }
 
       // Clear conflict state.
       setPendingConflicts(null);
@@ -163,11 +169,22 @@ export function useSync(): SyncState & SyncActions {
     [pendingMerged, pendingLocal, pendingRemote, pushNow]
   );
 
+  // Latest syncNow for the auto-sync effect. We keep the effect dependent
+  // only on `isAuthenticated`/`cloudSnapshot`, NOT on syncNow's identity —
+  // syncNow changes whenever pendingConflicts flips, which would re-fire the
+  // effect immediately after resolving a conflict and re-merge against the
+  // still-stale cloud snapshot, re-creating the very conflict the user just
+  // resolved (modal reappears and gets stuck).
+  const syncNowRef = useRef(syncNow);
+  useEffect(() => {
+    syncNowRef.current = syncNow;
+  }, [syncNow]);
+
   // Auto-sync on sign-in (wait for cloudSnapshot to load).
   useEffect(() => {
     if (!isAuthenticated || cloudSnapshot === undefined) return;
-    syncNow();
-  }, [isAuthenticated, cloudSnapshot, syncNow]);
+    syncNowRef.current();
+  }, [isAuthenticated, cloudSnapshot]);
 
   // Background push every PUSH_INTERVAL_MS.
   useEffect(() => {
