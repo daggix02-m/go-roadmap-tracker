@@ -78,7 +78,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   const isEnabled = permission === 'granted' && settings.dailyReminderEnabled;
 
   return (
-    <div className="max-w-3xl mx-auto px-4 mt-4">
+    <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 mt-4">
       <div className="p-3.5 rounded-lg bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div

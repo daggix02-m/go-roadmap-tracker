@@ -623,7 +623,7 @@ export default function App() {
         completedCount={progress.completedPhases.length}
       />
 
-      <main className="max-w-3xl mx-auto px-4 pt-4 space-y-3">
+      <main className="max-w-3xl lg:max-w-5xl mx-auto px-4 pt-4 space-y-3">
         {/* Widget-style overview */}
         <ContributionGraph historyMinutes={appData.global.historyMinutes} />
 
@@ -668,36 +668,38 @@ export default function App() {
             </button>
           </div>
         ) : (
-          filteredPhases.map((phase) => (
-            <PhaseCard
-              key={phase.id}
-              phase={phase}
-              progress={progress}
-              isOpen={openCardId === phase.id}
-              isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
-              stepTimerApi={{
-                timer: timersBlob.step,
-                nowMs,
-                durations: stepDurations,
-                doneDay: stepDoneDay,
-                today: getLocalDateString(),
-                start: handleStartStepTimer,
-                pause: handlePauseStepTimer,
-                resume: handleResumeStepTimer,
-                cancel: handleCancelStepTimer,
-                setDuration: handleSetStepDuration,
-                markDoneToday: handleMarkStepDoneToday
-              }}
-              onToggleOpen={() =>
-                setOpenCardId((prev) => (prev === phase.id ? null : phase.id))
-              }
-              onToggleCriteria={handleToggleCriteria}
-              onToggleStep={handleToggleStep}
-              onCompletePhase={handleToggleComplete}
-              onSaveNote={handleSaveNote}
-              onSelectConcept={handleSelectConcept}
-            />
-          ))
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+            {filteredPhases.map((phase) => (
+              <PhaseCard
+                key={phase.id}
+                phase={phase}
+                progress={progress}
+                isOpen={openCardId === phase.id}
+                isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
+                stepTimerApi={{
+                  timer: timersBlob.step,
+                  nowMs,
+                  durations: stepDurations,
+                  doneDay: stepDoneDay,
+                  today: getLocalDateString(),
+                  start: handleStartStepTimer,
+                  pause: handlePauseStepTimer,
+                  resume: handleResumeStepTimer,
+                  cancel: handleCancelStepTimer,
+                  setDuration: handleSetStepDuration,
+                  markDoneToday: handleMarkStepDoneToday
+                }}
+                onToggleOpen={() =>
+                  setOpenCardId((prev) => (prev === phase.id ? null : phase.id))
+                }
+                onToggleCriteria={handleToggleCriteria}
+                onToggleStep={handleToggleStep}
+                onCompletePhase={handleToggleComplete}
+                onSaveNote={handleSaveNote}
+                onSelectConcept={handleSelectConcept}
+              />
+            ))}
+          </div>
         )}
 
         <footer className="pt-6 pb-2 text-center text-[11px] text-faint">

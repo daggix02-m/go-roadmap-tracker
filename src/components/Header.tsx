@@ -41,7 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="bg-page/90 backdrop-blur-md border-b border-line">
-      <div className="max-w-3xl mx-auto px-4 py-3">
+      <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Wordmark / switcher */}
           <div className="min-w-0">

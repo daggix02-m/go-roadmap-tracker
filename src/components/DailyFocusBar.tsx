@@ -21,7 +21,7 @@ export const DailyFocusBar: React.FC<DailyFocusBarProps> = ({
 
   return (
     <div className="fixed bottom-0 inset-x-0 z-30 bg-page/95 backdrop-blur-md border-t border-line safe-bottom">
-      <div className="max-w-3xl mx-auto px-4 pt-2.5 flex items-center justify-between gap-3">
+      <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 pt-2.5 flex items-center justify-between gap-3">
         <button
           onClick={onJumpToActive}
           className="flex items-center gap-2.5 min-w-0 text-left cursor-pointer group"

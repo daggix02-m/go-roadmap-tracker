@@ -35,7 +35,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({ plan, filter, onFilterChan
   ];
 
   return (
-    <div className="px-4 pt-4 pb-1 max-w-3xl mx-auto flex flex-col gap-3">
+    <div className="px-4 pt-4 pb-1 max-w-3xl lg:max-w-5xl mx-auto flex flex-col gap-3">
       {/* Search */}
       <div className="relative">
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-faint">
