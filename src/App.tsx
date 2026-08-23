@@ -43,6 +43,8 @@ import { PlanEditorModal } from './components/PlanEditorModal';
 import { ContributionGraph } from './components/ContributionGraph';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 import { AuthModal } from './components/AuthModal';
+import { ConflictModal } from './components/ConflictModal';
+import { useSync } from './utils/useSync';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -55,6 +57,9 @@ export default function App() {
   const [showCheatsheetModal, setShowCheatsheetModal] = useState(false);
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+
+  // Cross-device sync engine.
+  const { pendingConflicts, resolveConflicts, syncing, lastPushedAt } = useSync();
   // Plan editor: null = closed; 'new' = creating; planId string = editing that custom plan
   const [editorState, setEditorState] = useState<{ mode: 'new' } | { mode: 'edit'; planId: string } | null>(
     null
@@ -759,6 +764,13 @@ export default function App() {
 
       {showAuthModal && (
         <AuthModal onClose={() => setShowAuthModal(false)} />
+      )}
+
+      {pendingConflicts && pendingConflicts.length > 0 && (
+        <ConflictModal
+          conflicts={pendingConflicts}
+          onResolve={resolveConflicts}
+        />
       )}
 
       {editorState && (
