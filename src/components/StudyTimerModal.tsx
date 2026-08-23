@@ -1,116 +1,54 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React from 'react';
 import { Pause, Play, RotateCcw, X } from 'lucide-react';
 import { Phase } from '../types';
+import {
+  TimerState,
+  formatCountdown,
+  isRunning,
+  remainingSeconds
+} from '../utils/timerEngine';
 
 interface StudyTimerModalProps {
   activePhase: Phase;
-  baseTitle: string;
+  /** Live focus timer owned by App; null = nothing selected yet. */
+  timer: TimerState | null;
+  nowMs: number;
+  onSelectPreset: (durationSec: number, variant: 'study' | 'break') => void;
+  onStart: () => void;
+  onPause: () => void;
+  onReset: () => void;
   onClose: () => void;
-  onLogStudy: (minutes: number) => void;
 }
 
+const FOCUS_PRESETS: { sec: number; label: string }[] = [
+  { sec: 15 * 60, label: '15m' },
+  { sec: 60 * 60, label: '1h' },
+  { sec: 90 * 60, label: '1h30m' },
+  { sec: 120 * 60, label: '2h' },
+  { sec: 150 * 60, label: '2h30m' },
+  { sec: 180 * 60, label: '3h' }
+];
+
+const BREAK_PRESET = { sec: 15 * 60, label: '15m break' };
+
+/**
+ * Controlled view over the App-owned focus timer. All ticking lives in App
+ * (single interval), so closing this modal never stops the countdown.
+ */
 export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
   activePhase,
-  baseTitle,
-  onClose,
-  onLogStudy
+  timer,
+  nowMs,
+  onSelectPreset,
+  onStart,
+  onPause,
+  onReset,
+  onClose
 }) => {
-  const [selectedDuration, setSelectedDuration] = useState<number>(25 * 60);
-  const [timeLeft, setTimeLeft] = useState<number>(selectedDuration);
-  const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [mode, setMode] = useState<'study' | 'break'>('study');
-  const [completedSessions, setCompletedSessions] = useState<number>(0);
-
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    if (isRunning) {
-      timerRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(timerRef.current!);
-            handleTimerComplete();
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } else if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, mode, selectedDuration]);
-
-  useEffect(() => {
-    if (!isRunning) return;
-    document.title = `${formatTime(timeLeft)} — Focus timer`;
-    return () => {
-      document.title = baseTitle;
-    };
-  }, [timeLeft, isRunning, baseTitle]);
-
-  const handleTimerComplete = () => {
-    setIsRunning(false);
-    if (mode === 'study') {
-      const minutesStudied = Math.round(selectedDuration / 60);
-      onLogStudy(minutesStudied);
-      setCompletedSessions((prev) => prev + 1);
-
-      try {
-        const audioCtx = new (window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15);
-        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 0.5);
-      } catch {
-        // Audio not available
-      }
-
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('Focus session complete', {
-          body: `${minutesStudied} min logged for phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}.`,
-          icon: '/icon.svg'
-        });
-      }
-    }
-  };
-
-  const handleSelectPreset = (minutes: number, isBreak = false) => {
-    setIsRunning(false);
-    setMode(isBreak ? 'break' : 'study');
-    setSelectedDuration(minutes * 60);
-    setTimeLeft(minutes * 60);
-  };
-
-  const handleReset = () => {
-    setIsRunning(false);
-    setTimeLeft(selectedDuration);
-  };
-
-  function formatTime(totalSeconds: number): string {
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-
-  const presets: { minutes: number; label: string; isBreak?: boolean }[] = [
-    { minutes: 15, label: '15m' },
-    { minutes: 25, label: '25m' },
-    { minutes: 50, label: '50m' },
-    { minutes: 5, label: '5m break', isBreak: true }
-  ];
+  const remaining = timer ? remainingSeconds(timer, nowMs) : 0;
+  const running = timer ? isRunning(timer) : false;
+  const variant = timer?.variant ?? 'study';
+  const expired = !!timer && remaining <= 0;
 
   return (
     <div
@@ -138,20 +76,17 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
         </p>
 
         {/* Presets */}
-        <div className="flex items-center gap-1.5 mb-6 flex-wrap justify-center">
-          {presets.map((p) => {
-            const active =
-              mode === (p.isBreak ? 'break' : 'study') && selectedDuration === p.minutes * 60;
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap justify-center">
+          {FOCUS_PRESETS.map((p) => {
+            const active = variant === 'study' && timer?.durationSec === p.sec;
             return (
               <button
                 key={p.label}
-                onClick={() => handleSelectPreset(p.minutes, p.isBreak)}
+                onClick={() => onSelectPreset(p.sec, 'study')}
                 aria-pressed={active}
                 className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   active
-                    ? p.isBreak
-                      ? 'bg-success text-page'
-                      : 'bg-accent text-page'
+                    ? 'bg-accent text-page'
                     : 'border border-line text-muted hover:text-text hover:bg-hover'
                 }`}
               >
@@ -160,46 +95,67 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
             );
           })}
         </div>
+        <div className="mb-6">
+          <button
+            onClick={() => onSelectPreset(BREAK_PRESET.sec, 'break')}
+            aria-pressed={variant === 'break'}
+            className={`px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+              variant === 'break'
+                ? 'bg-success text-page'
+                : 'border border-line text-muted hover:text-text hover:bg-hover'
+            }`}
+          >
+            {BREAK_PRESET.label}
+          </button>
+        </div>
 
         {/* Time display */}
         <div className="w-full aspect-square max-w-[13rem] rounded-full border border-line flex flex-col items-center justify-center mb-6 bg-page">
           <span
             className={`font-mono text-5xl tracking-tight tabular-nums ${
-              timeLeft === 0 ? 'text-success' : 'text-text'
+              expired ? 'text-success' : running ? 'text-text' : 'text-text/80'
             }`}
           >
-            {formatTime(timeLeft)}
+            {formatCountdown(remaining)}
           </span>
           <span className="mt-2 font-mono text-[11px] uppercase tracking-wider text-faint">
-            {mode === 'study' ? 'Focus' : 'Break'}
-            {completedSessions > 0 && ` · ${completedSessions} done`}
+            {expired
+              ? 'Done'
+              : variant === 'study'
+                ? running
+                  ? 'Focusing'
+                  : 'Paused'
+                : running
+                  ? 'On break'
+                  : 'Break · paused'}
           </span>
         </div>
 
         {/* Controls */}
         <div className="flex items-center gap-2 w-full max-w-xs justify-center">
           <button
-            onClick={() => setIsRunning(!isRunning)}
-            disabled={timeLeft === 0 && !isRunning}
-            className={`flex-1 py-2.5 px-4 rounded-md font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer ${
-              isRunning
+            onClick={running ? onPause : onStart}
+            disabled={!timer || expired}
+            title={expired ? 'Pick a preset to start again' : undefined}
+            className={`flex-1 py-2.5 px-4 rounded-md font-semibold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+              running
                 ? 'border border-line text-text hover:bg-hover'
                 : 'bg-text text-page hover:opacity-85'
             }`}
           >
-            {isRunning ? (
+            {running ? (
               <>
                 <Pause className="w-4 h-4" /> Pause
               </>
             ) : (
               <>
-                <Play className="w-4 h-4" /> {timeLeft < selectedDuration ? 'Resume' : 'Start'}
+                <Play className="w-4 h-4" /> Resume
               </>
             )}
           </button>
 
           <button
-            onClick={handleReset}
+            onClick={onReset}
             aria-label="Reset timer"
             className="p-2.5 rounded-md border border-line text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
           >
@@ -207,7 +163,9 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
           </button>
         </div>
 
-        <p className="mt-4 text-xs text-muted">Completed sessions count toward today's streak.</p>
+        <p className="mt-4 text-xs text-muted">
+          Keeps counting with the app closed — completed time counts toward today's streak.
+        </p>
       </div>
     </div>
   );

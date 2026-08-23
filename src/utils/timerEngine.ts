@@ -23,6 +23,8 @@ export interface TimerState {
   /** Step timers only: which phase/step owns this countdown. */
   phaseId?: number;
   stepIdx?: number;
+  /** Focus timers only: study sessions log minutes; breaks don't. Engine ignores this. */
+  variant?: 'study' | 'break';
 }
 
 /** Persisted shape: one focus timer + at most one active step timer. */

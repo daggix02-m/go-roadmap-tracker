@@ -1,0 +1,88 @@
+import React from 'react';
+import { Pause, Play, Square, Timer } from 'lucide-react';
+import { TimerState, formatCountdown, isRunning, remainingSeconds } from '../utils/timerEngine';
+
+interface ActiveTimerBarProps {
+  timer: TimerState;
+  nowMs: number;
+  phaseLabel: string;
+  onOpenModal: () => void;
+  onToggleRun: () => void;
+  onStop: () => void;
+}
+
+/**
+ * Compact strip pinned below the header while a focus timer exists and the
+ * timer modal is closed. Keeps the countdown visible anywhere in the app —
+ * the whole point of the background timer.
+ */
+export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
+  timer,
+  nowMs,
+  phaseLabel,
+  onOpenModal,
+  onToggleRun,
+  onStop
+}) => {
+  const remaining = remainingSeconds(timer, nowMs);
+  const running = isRunning(timer);
+  const expired = remaining <= 0;
+
+  return (
+    <div className="bg-surface/95 backdrop-blur-md border-b border-line">
+      <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-3">
+        <button
+          onClick={onOpenModal}
+          className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+          aria-label="Open focus timer"
+        >
+          <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+            {running && !expired && (
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-60" />
+            )}
+            <span
+              className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                expired ? 'bg-warning' : running ? 'bg-accent' : 'bg-muted'
+              }`}
+            />
+          </span>
+
+          <Timer className={`w-4 h-4 shrink-0 ${expired ? 'text-warning' : 'text-accent'}`} />
+
+          <span
+            className={`font-mono text-base tabular-nums tracking-tight ${
+              expired ? 'text-warning' : 'text-text'
+            }`}
+          >
+            {formatCountdown(remaining)}
+          </span>
+
+          <span className="text-xs text-muted truncate group-hover:text-text transition-colors">
+            {expired
+              ? 'Session finished — tap to review'
+              : `${timer.variant === 'break' ? 'Break' : 'Focus'} · ${phaseLabel}`}
+          </span>
+        </button>
+
+        {!expired && (
+          <button
+            onClick={onToggleRun}
+            aria-label={running ? 'Pause timer' : 'Resume timer'}
+            className="p-2 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+          >
+            {running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          </button>
+        )}
+
+        <button
+          onClick={onStop}
+          aria-label="Stop timer"
+          title={expired ? 'Dismiss' : 'Stop and reset'}
+          className="p-2 rounded-md text-faint hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+        >
+          <Square className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};

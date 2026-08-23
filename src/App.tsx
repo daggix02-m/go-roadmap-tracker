@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/Header';
 import { NotificationBanner } from './components/NotificationBanner';
 import { FilterBar } from './components/FilterBar';
@@ -13,10 +13,28 @@ import { loadAppData, saveAppData, logStudyActivity, emptyPlanProgress } from '.
 import { BUILT_IN_PLANS, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
 import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
-import { sendDailyReminderNotification } from './utils/notifications';
+import {
+  sendDailyReminderNotification,
+  playChime,
+  notifyFocusComplete
+} from './utils/notifications';
+import {
+  TimerState,
+  TimersBlob,
+  createTimer,
+  loadTimers,
+  saveTimers,
+  startTimer,
+  pauseTimer,
+  resetTimer,
+  isRunning,
+  remainingSeconds,
+  formatCountdown
+} from './utils/timerEngine';
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { PlanEditorModal } from './components/PlanEditorModal';
 import { WidgetDashboard } from './components/WidgetDashboard';
+import { ActiveTimerBar } from './components/ActiveTimerBar';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -35,6 +53,12 @@ export default function App() {
 
   // PWA install prompt event
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+
+  // --- Focus timer (device-local; survives reloads via wall-clock deadlines) ---
+  const [timersBlob, setTimersBlob] = useState<TimersBlob>(() => loadTimers());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  /** endsAtMs of the last focus completion we already logged — prevents double-firing. */
+  const focusCompletedRef = useRef<number | null>(null);
 
   // Register service worker & capture PWA install event
   useEffect(() => {
@@ -71,10 +95,15 @@ export default function App() {
     [activePlan, progress]
   );
 
-  // Tab title follows the active plan
+  // Tab title follows the active plan, and shows live focus time while running
+  const baseTitle = `${activePlan.name} Tracker`;
   useEffect(() => {
-    document.title = `${activePlan.name} Tracker`;
-  }, [activePlan.name]);
+    const f = timersBlob.focus;
+    document.title =
+      f && isRunning(f)
+        ? `${formatCountdown(remainingSeconds(f, nowMs))} — Focus`
+        : baseTitle;
+  }, [timersBlob.focus, nowMs, baseTitle]);
 
   // Open the active card by default on first load
   useEffect(() => {
@@ -202,6 +231,84 @@ export default function App() {
     if (!activePhase) return;
     handleStateReload(logStudyActivity(appData, activePlan.id, activePhase.id, minutes));
   };
+
+  // --- Focus timer control (state lives here so it outlives the modal) -----
+
+  const updateFocusTimer = (mutate: (t: TimerState | null) => TimerState | null) => {
+    setTimersBlob((prev) => ({ ...prev, focus: mutate(prev.focus) }));
+  };
+
+  const handleSelectFocusPreset = (durationSec: number, variant: 'study' | 'break') => {
+    focusCompletedRef.current = null;
+    updateFocusTimer((prev) => {
+      const base = prev ?? createTimer('focus', durationSec);
+      return { ...resetTimer(base, durationSec), variant };
+    });
+  };
+
+  const handleStartFocus = () => updateFocusTimer((t) => (t ? startTimer(t, Date.now()) : t));
+  const handlePauseFocus = () => updateFocusTimer((t) => (t ? pauseTimer(t, Date.now()) : t));
+  const handleStopFocus = () => {
+    focusCompletedRef.current = null;
+    updateFocusTimer((t) => (t ? resetTimer(t, t.durationSec) : t));
+  };
+
+  // Persist device-local timers on every change.
+  useEffect(() => {
+    saveTimers(timersBlob);
+  }, [timersBlob]);
+
+  // Single 1-second ticker while any timer runs; instant catch-up on tab focus.
+  const anyTimerRunning =
+    (timersBlob.focus !== null && timersBlob.focus.endsAtMs !== null) ||
+    (timersBlob.step !== null && timersBlob.step.endsAtMs !== null);
+
+  useEffect(() => {
+    if (!anyTimerRunning) return;
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    const catchUp = () => setNowMs(Date.now());
+    document.addEventListener('visibilitychange', catchUp);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', catchUp);
+    };
+  }, [anyTimerRunning]);
+
+  // Fire exactly once when the running focus timer crosses zero.
+  useEffect(() => {
+    const f = timersBlob.focus;
+    if (!f || f.endsAtMs === null || nowMs < f.endsAtMs) return;
+    if (focusCompletedRef.current === f.endsAtMs) return;
+    focusCompletedRef.current = f.endsAtMs;
+
+    playChime();
+    if ((f.variant ?? 'study') === 'study' && activePhase) {
+      const minutes = Math.max(1, Math.round(f.durationSec / 60));
+      notifyFocusComplete(
+        `phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`,
+        minutes
+      );
+      handleUpdateData((prev) =>
+        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
+      );
+    }
+    // Frozen at zero ("Done") until a new preset or Stop is chosen.
+  }, [nowMs, timersBlob.focus]);
+
+  // Focus timer that finished while the app was fully closed: log once on load.
+  useEffect(() => {
+    const f = timersBlob.focus;
+    if (!f || f.endsAtMs === null || Date.now() < f.endsAtMs) return;
+    focusCompletedRef.current = f.endsAtMs;
+    if ((f.variant ?? 'study') === 'study' && activePhase) {
+      const minutes = Math.max(1, Math.round(f.durationSec / 60));
+      handleUpdateData((prev) =>
+        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleSelectConcept = (concept: string) => {
     setFilter({ section: 'ALL', searchQuery: concept });
@@ -356,32 +463,53 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-page text-text pb-24">
-      <Header
-        plan={activePlan}
-        progress={progressSummary}
-        streak={appData.global.streak}
-        titleNode={
-          <PlanSwitcher
-            plans={getAllPlans(appData)}
-            activePlanId={activePlan.id}
-            progressByPlan={appData.progressByPlan}
-            onSelect={handleSelectPlan}
-            onFork={handleForkPlan}
-            onDelete={handleDeletePlan}
-            onImportFile={handleImportPlanFile}
-            onCreate={() => setEditorState({ mode: 'new' })}
-            onEdit={(planId) => setEditorState({ mode: 'edit', planId })}
-          />
-        }
-        onOpenStats={() => setShowStatsModal(true)}
-        onOpenTimer={() => hasPhases && setShowTimerModal(true)}
-        onOpenCheatsheet={
-          activePlan.cheatsheetId ? () => setShowCheatsheetModal(true) : undefined
-        }
-        onOpenInstallGuide={() => setShowInstallGuideModal(true)}
-        canInstallPwa={!!deferredPrompt}
-        onTriggerPwaInstall={handleTriggerPwaInstall}
-      />
+      {/* Header + timer bar stick together as one unit */}
+      <div className="sticky top-0 z-40">
+        <Header
+          plan={activePlan}
+          progress={progressSummary}
+          streak={appData.global.streak}
+          titleNode={
+            <PlanSwitcher
+              plans={getAllPlans(appData)}
+              activePlanId={activePlan.id}
+              progressByPlan={appData.progressByPlan}
+              onSelect={handleSelectPlan}
+              onFork={handleForkPlan}
+              onDelete={handleDeletePlan}
+              onImportFile={handleImportPlanFile}
+              onCreate={() => setEditorState({ mode: 'new' })}
+              onEdit={(planId) => setEditorState({ mode: 'edit', planId })}
+            />
+          }
+          onOpenStats={() => setShowStatsModal(true)}
+          onOpenTimer={() => hasPhases && setShowTimerModal(true)}
+          onOpenCheatsheet={
+            activePlan.cheatsheetId ? () => setShowCheatsheetModal(true) : undefined
+          }
+          onOpenInstallGuide={() => setShowInstallGuideModal(true)}
+          canInstallPwa={!!deferredPrompt}
+          onTriggerPwaInstall={handleTriggerPwaInstall}
+        />
+
+        {timersBlob.focus &&
+          !showTimerModal &&
+          (timersBlob.focus.endsAtMs !== null ||
+            timersBlob.focus.remainingSec < timersBlob.focus.durationSec) && (
+            <ActiveTimerBar
+              timer={timersBlob.focus}
+              nowMs={nowMs}
+              phaseLabel={
+                activePhase ? activePhase.shortTitle ?? activePhase.title : 'no active phase'
+              }
+              onOpenModal={() => setShowTimerModal(true)}
+              onToggleRun={() =>
+                isRunning(timersBlob.focus!) ? handlePauseFocus() : handleStartFocus()
+              }
+              onStop={handleStopFocus}
+            />
+          )}
+      </div>
 
       {activePhase && (
         <NotificationBanner
@@ -489,9 +617,13 @@ export default function App() {
       {showTimerModal && activePhase && (
         <StudyTimerModal
           activePhase={activePhase}
-          baseTitle={`${activePlan.name} Tracker`}
+          timer={timersBlob.focus}
+          nowMs={nowMs}
+          onSelectPreset={handleSelectFocusPreset}
+          onStart={handleStartFocus}
+          onPause={handlePauseFocus}
+          onReset={handleStopFocus}
           onClose={() => setShowTimerModal(false)}
-          onLogStudy={handleLogStudySession}
         />
       )}
 

@@ -40,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   onTriggerPwaInstall
 }) => {
   return (
-    <header className="sticky top-0 z-40 bg-page/90 backdrop-blur-md border-b border-line">
+    <header className="bg-page/90 backdrop-blur-md border-b border-line">
       <div className="max-w-3xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Wordmark / switcher */}

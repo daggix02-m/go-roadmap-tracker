@@ -86,3 +86,45 @@ export function sendTestNotification(activePhase: Phase, streak: number, planNam
     return false;
   }
 }
+
+/** Short two-note chime when a focus session finishes. Silent if audio is unavailable. */
+export function playChime(): void {
+  try {
+    const audioCtx = new (window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.5);
+  } catch {
+    // Audio not available
+  }
+}
+
+/** OS-level "focus session complete" notification (no-op without permission). */
+export function notifyFocusComplete(phaseLabel: string, minutesStudied: number): void {
+  if (!isNotificationSupported() || Notification.permission !== 'granted') return;
+  const title = 'Focus session complete';
+  const options: NotificationOptions = {
+    body: `${minutesStudied} min logged — ${phaseLabel}.`,
+    icon: '/icon.svg',
+    badge: '/icon.svg',
+    tag: `focus-complete-${Date.now()}` // unique: sessions can complete back-to-back
+  };
+  try {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, options));
+    } else {
+      new Notification(title, options);
+    }
+  } catch {
+    // Notification unavailable
+  }
+}
