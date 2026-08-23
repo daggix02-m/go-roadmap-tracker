@@ -9,7 +9,13 @@ import { StatsModal } from './components/StatsModal';
 import { GoCheatsheetModal } from './components/GoCheatsheetModal';
 import { InstallGuideModal } from './components/InstallGuideModal';
 import { AppData, AppSettings, FilterState, Plan, PlanProgress, SECTION_FILTER_PREFIX } from './types';
-import { loadAppData, saveAppData, logStudyActivity, emptyPlanProgress } from './utils/storage';
+import {
+  loadAppData,
+  saveAppData,
+  logStudyActivity,
+  emptyPlanProgress,
+  getLocalDateString
+} from './utils/storage';
 import { BUILT_IN_PLANS, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
 import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
@@ -19,6 +25,7 @@ import {
   notifyFocusComplete
 } from './utils/notifications';
 import {
+  STEP_TIMER_DEFAULT_SEC,
   TimerState,
   TimersBlob,
   createTimer,
@@ -253,6 +260,55 @@ export default function App() {
     updateFocusTimer((t) => (t ? resetTimer(t, t.durationSec) : t));
   };
 
+  // --- Step countdown timers (one active at a time, device-local) ----------
+
+  const stepDurations = progress.stepDurations ?? {};
+  const stepDoneDay = progress.stepDoneDay ?? {};
+
+  const handleStartStepTimer = (phaseId: number, stepIdx: number) => {
+    const durationSec =
+      stepDurations[`${phaseId}_${stepIdx}`] ?? STEP_TIMER_DEFAULT_SEC;
+    setTimersBlob((prev) => ({
+      ...prev,
+      // Starting a new step replaces any previous one — only one runs at a time.
+      step: startTimer(createTimer('step', durationSec, { phaseId, stepIdx }), Date.now())
+    }));
+  };
+  const handlePauseStepTimer = () =>
+    setTimersBlob((prev) => ({
+      ...prev,
+      step: prev.step ? pauseTimer(prev.step, Date.now()) : null
+    }));
+  const handleResumeStepTimer = () =>
+    setTimersBlob((prev) => ({
+      ...prev,
+      step: prev.step ? startTimer(prev.step, Date.now()) : null
+    }));
+  const handleCancelStepTimer = () =>
+    setTimersBlob((prev) => ({ ...prev, step: null }));
+
+  const handleSetStepDuration = (phaseId: number, stepIdx: number, sec: number) => {
+    const key = `${phaseId}_${stepIdx}`;
+    updateProgress((prev) => ({
+      ...prev,
+      stepDurations: { ...(prev.stepDurations ?? {}), [key]: sec }
+    }));
+    // If this key owns the live timer, apply the new length immediately.
+    setTimersBlob((prev) => {
+      if (!prev.step || prev.step.phaseId !== phaseId || prev.step.stepIdx !== stepIdx) return prev;
+      return { ...prev, step: resetTimer(prev.step, sec) };
+    });
+  };
+
+  const handleMarkStepDoneToday = (phaseId: number, stepIdx: number) => {
+    const key = `${phaseId}_${stepIdx}`;
+    updateProgress((prev) => ({
+      ...prev,
+      stepDoneDay: { ...(prev.stepDoneDay ?? {}), [key]: getLocalDateString() }
+    }));
+    handleCancelStepTimer();
+  };
+
   // Persist device-local timers on every change.
   useEffect(() => {
     saveTimers(timersBlob);
@@ -295,6 +351,17 @@ export default function App() {
     }
     // Frozen at zero ("Done") until a new preset or Stop is chosen.
   }, [nowMs, timersBlob.focus]);
+
+  // Gentle chime the first time a step countdown crosses zero (the prompt
+  // itself lives inside the phase card and resurfaces until answered).
+  const stepExpiredRef = useRef<number | null>(null);
+  useEffect(() => {
+    const s = timersBlob.step;
+    if (!s || s.endsAtMs === null || nowMs < s.endsAtMs) return;
+    if (stepExpiredRef.current === s.endsAtMs) return;
+    stepExpiredRef.current = s.endsAtMs;
+    playChime();
+  }, [nowMs, timersBlob.step]);
 
   // Focus timer that finished while the app was fully closed: log once on load.
   useEffect(() => {
@@ -587,6 +654,19 @@ export default function App() {
               progress={progress}
               isOpen={openCardId === phase.id}
               isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
+              stepTimerApi={{
+                timer: timersBlob.step,
+                nowMs,
+                durations: stepDurations,
+                doneDay: stepDoneDay,
+                today: getLocalDateString(),
+                start: handleStartStepTimer,
+                pause: handlePauseStepTimer,
+                resume: handleResumeStepTimer,
+                cancel: handleCancelStepTimer,
+                setDuration: handleSetStepDuration,
+                markDoneToday: handleMarkStepDoneToday
+              }}
               onToggleOpen={() =>
                 setOpenCardId((prev) => (prev === phase.id ? null : phase.id))
               }

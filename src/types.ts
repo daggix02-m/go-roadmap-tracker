@@ -52,6 +52,10 @@ export interface PlanProgress {
   stepChecked: Record<string, boolean>;
   userNotes: Record<number, string>;
   lastStudiedPhaseId: number | null;
+  /** Per-step countdown overrides in seconds; absent key = default 1 hour. */
+  stepDurations?: Record<string, number>;
+  /** Step marked done via its countdown timer — value is the local day it was done. */
+  stepDoneDay?: Record<string, string>;
 }
 
 export interface AppSettings {

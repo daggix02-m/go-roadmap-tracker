@@ -9,6 +9,19 @@
 
 export const TIMERS_STORAGE_KEY = 'plan_tracker_timers_v1';
 
+/** Countdown length used for steps without a manual override. */
+export const STEP_TIMER_DEFAULT_SEC = 60 * 60;
+
+/** Choices offered when customizing a step's countdown. */
+export const STEP_DURATION_PRESETS: { sec: number; label: string }[] = [
+  { sec: 15 * 60, label: '15m' },
+  { sec: 30 * 60, label: '30m' },
+  { sec: 45 * 60, label: '45m' },
+  { sec: 60 * 60, label: '1h' },
+  { sec: 90 * 60, label: '1h30m' },
+  { sec: 120 * 60, label: '2h' }
+];
+
 export type TimerKind = 'focus' | 'step';
 
 /** A single countdown. `endsAtMs !== null` means running; otherwise paused/idle. */

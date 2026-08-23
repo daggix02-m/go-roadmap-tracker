@@ -21,7 +21,9 @@ export const EMPTY_PLAN_PROGRESS: PlanProgress = {
   criteriaChecked: {},
   stepChecked: {},
   userNotes: {},
-  lastStudiedPhaseId: null
+  lastStudiedPhaseId: null,
+  stepDurations: {},
+  stepDoneDay: {}
 };
 
 export function emptyPlanProgress(): PlanProgress {
@@ -37,6 +39,19 @@ function defaultAppData(): AppData {
     global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0 },
     progressByPlan: {}
   };
+}
+
+/** Keeps only entries whose value passes `ok`; non-objects become empty. */
+function sanitizeRecord<T>(
+  value: unknown,
+  ok: (v: unknown) => boolean
+): Record<string, T> {
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, T> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof k === 'string' && k.length > 0 && ok(v)) out[k] = v as T;
+  }
+  return out;
 }
 
 /** Defensive merge of parsed JSON into a complete AppData. */
@@ -76,7 +91,9 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
         criteriaChecked: raw.criteriaChecked && typeof raw.criteriaChecked === 'object' ? raw.criteriaChecked : {},
         stepChecked: raw.stepChecked && typeof raw.stepChecked === 'object' ? raw.stepChecked : {},
         userNotes: raw.userNotes && typeof raw.userNotes === 'object' ? raw.userNotes : {},
-        lastStudiedPhaseId: typeof raw.lastStudiedPhaseId === 'number' ? raw.lastStudiedPhaseId : null
+        lastStudiedPhaseId: typeof raw.lastStudiedPhaseId === 'number' ? raw.lastStudiedPhaseId : null,
+        stepDurations: sanitizeRecord(raw.stepDurations, (v) => typeof v === 'number' && v > 0),
+        stepDoneDay: sanitizeRecord(raw.stepDoneDay, (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
       };
     }
   }

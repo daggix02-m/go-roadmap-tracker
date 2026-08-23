@@ -6,15 +6,45 @@ import {
   ChevronRight,
   CircleAlert,
   Copy,
-  Lightbulb
+  Lightbulb,
+  Pause,
+  Play,
+  RotateCcw
 } from 'lucide-react';
 import { Phase, PlanProgress } from '../types';
+import {
+  STEP_DURATION_PRESETS,
+  STEP_TIMER_DEFAULT_SEC,
+  TimerState,
+  formatCountdown,
+  isRunning,
+  remainingSeconds
+} from '../utils/timerEngine';
+
+/** Everything PhaseCard needs to render and control the single active step timer. */
+export interface StepTimerApi {
+  /** The one app-level step timer (null = none). */
+  timer: TimerState | null;
+  nowMs: number;
+  /** Persisted per-step duration overrides from plan progress. */
+  durations: Record<string, number>;
+  /** key -> 'YYYY-MM-DD' the step was marked done via its countdown. */
+  doneDay: Record<string, string>;
+  today: string;
+  start: (phaseId: number, stepIdx: number) => void;
+  pause: () => void;
+  resume: () => void;
+  cancel: () => void;
+  setDuration: (phaseId: number, stepIdx: number, sec: number) => void;
+  markDoneToday: (phaseId: number, stepIdx: number) => void;
+}
 
 interface PhaseCardProps {
   phase: Phase;
   progress: PlanProgress;
   isOpen: boolean;
   isActive: boolean;
+  stepTimerApi?: StepTimerApi;
   onToggleOpen: () => void;
   onToggleStep: (phaseId: number, stepIndex: number) => void;
   onToggleCriteria: (phaseId: number, criteriaIndex: number) => void;
@@ -31,6 +61,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
   progress,
   isOpen,
   isActive,
+  stepTimerApi,
   onToggleOpen,
   onToggleStep,
   onToggleCriteria,
@@ -41,6 +72,8 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [noteContent, setNoteContent] = useState(progress.userNotes[phase.id] || '');
   const [showGateWarning, setShowGateWarning] = useState(false);
+  /** key of the step whose duration-preset menu is open (null = closed). */
+  const [openDurationKey, setOpenDurationKey] = useState<string | null>(null);
 
   const isCompleted = progress.completedPhases.includes(phase.id);
 
@@ -202,25 +235,153 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
               </div>
               <ul className="space-y-1">
                 {phase.steps.map((step, idx) => {
-                  const isDone = Boolean(progress.stepChecked[`${phase.id}_${idx}`]);
+                  const key = `${phase.id}_${idx}`;
+                  const isDone = Boolean(progress.stepChecked[key]);
+                  const doneToday = stepTimerApi?.doneDay[key] === stepTimerApi?.today;
+                  const crossedOff = isDone || doneToday;
+
+                  const ownTimer =
+                    stepTimerApi?.timer &&
+                    stepTimerApi.timer.phaseId === phase.id &&
+                    stepTimerApi.timer.stepIdx === idx
+                      ? stepTimerApi.timer
+                      : null;
+                  const ownRemaining = ownTimer ? remainingSeconds(ownTimer, stepTimerApi.nowMs) : 0;
+                  const ownExpired = !!ownTimer && ownRemaining <= 0;
+                  const effectiveDuration = stepTimerApi?.durations[key] ?? STEP_TIMER_DEFAULT_SEC;
+
                   return (
                     <li key={idx}>
-                      <label className="flex items-start gap-3 p-2 -mx-2 rounded-md cursor-pointer hover:bg-hover transition-colors select-none">
-                        <input
-                          type="checkbox"
-                          checked={isDone}
-                          onChange={() => onToggleStep(phase.id, idx)}
-                          className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
-                        />
-                        <span
-                          className={`text-sm leading-relaxed ${
-                            isDone ? 'text-faint line-through' : 'text-text/90'
-                          }`}
-                        >
-                          <span className="font-mono text-faint mr-1.5 select-none">{idx + 1}.</span>
-                          {step}
-                        </span>
-                      </label>
+                      <div className="flex items-start gap-3 p-2 -mx-2 rounded-md hover:bg-hover transition-colors select-none">
+                        <label className="flex items-start gap-3 flex-1 min-w-0 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={isDone}
+                            onChange={() => onToggleStep(phase.id, idx)}
+                            className="mt-0.5 w-4 h-4 rounded cursor-pointer shrink-0"
+                          />
+                          <span
+                            className={`text-sm leading-relaxed ${
+                              crossedOff ? 'text-faint line-through' : 'text-text/90'
+                            }`}
+                          >
+                            <span className="font-mono text-faint mr-1.5 select-none">{idx + 1}.</span>
+                            {step}
+                          </span>
+                          {doneToday && !isDone && (
+                            <span className="shrink-0 mt-0.5 px-1.5 py-0.5 rounded bg-success/10 text-success font-mono text-[10px]">
+                              done today
+                            </span>
+                          )}
+                        </label>
+
+                        {/* Countdown chip */}
+                        {stepTimerApi && !crossedOff && (
+                          <div className="relative shrink-0 mt-0.5 flex items-center">
+                            {ownTimer ? (
+                              ownExpired ? null : ( // expired state renders the prompt below instead
+                                <>
+                                  <span
+                                    className={`font-mono text-xs tabular-nums mr-1 ${
+                                      isRunning(ownTimer)
+                                        ? 'text-accent'
+                                        : 'text-muted'
+                                    }`}
+                                  >
+                                    {formatCountdown(ownRemaining)}
+                                  </span>
+                                  <button
+                                    onClick={isRunning(ownTimer) ? stepTimerApi.pause : stepTimerApi.resume}
+                                    aria-label={isRunning(ownTimer) ? 'Pause step timer' : 'Resume step timer'}
+                                    className="p-1 rounded text-muted hover:text-text hover:bg-raised transition-colors cursor-pointer"
+                                  >
+                                    {isRunning(ownTimer) ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                                  </button>
+                                </>
+                              )
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => stepTimerApi.start(phase.id, idx)}
+                                  title={`Start ${formatCountdown(effectiveDuration)} countdown`}
+                                  aria-label={`Start ${formatCountdown(effectiveDuration)} countdown for this step`}
+                                  className="flex items-center gap-1 px-1.5 py-1 rounded border border-line font-mono text-[11px] text-faint hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
+                                >
+                                  <Play className="w-3 h-3" />
+                                  {formatCountdown(effectiveDuration).replace(/:00$/, '')}
+                                </button>
+                                <button
+                                  onClick={() =>
+                                    setOpenDurationKey(openDurationKey === key ? null : key)
+                                  }
+                                  aria-label="Change step duration"
+                                  aria-expanded={openDurationKey === key}
+                                  className="p-1 rounded text-faint hover:text-text transition-colors cursor-pointer"
+                                >
+                                  <ChevronDown className="w-3 h-3" />
+                                </button>
+                                {openDurationKey === key && (
+                                  <div
+                                    role="menu"
+                                    aria-label="Step duration presets"
+                                    className="absolute right-0 top-full mt-1 z-10 py-1 rounded-md bg-surface border border-line shadow-lg grid grid-cols-3 gap-px w-36"
+                                  >
+                                    {STEP_DURATION_PRESETS.map((preset) => (
+                                      <button
+                                        key={preset.sec}
+                                        role="menuitemradio"
+                                        aria-checked={effectiveDuration === preset.sec}
+                                        onClick={() => {
+                                          stepTimerApi.setDuration(phase.id, idx, preset.sec);
+                                          setOpenDurationKey(null);
+                                        }}
+                                        className={`px-2 py-1.5 font-mono text-[11px] transition-colors cursor-pointer ${
+                                          effectiveDuration === preset.sec
+                                            ? 'bg-accent/15 text-accent'
+                                            : 'text-muted hover:text-text hover:bg-hover'
+                                        }`}
+                                      >
+                                        {preset.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Timer expiry prompt */}
+                      {ownExpired && stepTimerApi && (
+                        <div className="ml-7 mb-1 p-2.5 rounded-md border border-warning/40 bg-warning/5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                          <CircleAlert className="w-4 h-4 text-warning shrink-0" />
+                          <span className="text-xs text-text">
+                            Time's up ({formatCountdown(effectiveDuration)}) — did you finish this step?
+                          </span>
+                          <span className="flex-1" />
+                          <button
+                            onClick={() => stepTimerApi.markDoneToday(phase.id, idx)}
+                            className="px-2.5 py-1 rounded-md bg-success text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
+                          >
+                            Yes, mark done
+                          </button>
+                          <button
+                            onClick={() => stepTimerApi.start(phase.id, idx)}
+                            title="Restart the countdown for this step"
+                            className="p-1.5 rounded-md border border-line text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+                            aria-label="Restart countdown"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={stepTimerApi.cancel}
+                            className="px-2 py-1 rounded-md border border-line text-muted hover:text-text hover:bg-hover text-xs font-medium transition-colors cursor-pointer"
+                          >
+                            Not yet
+                          </button>
+                        </div>
+                      )}
                     </li>
                   );
                 })}
