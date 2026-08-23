@@ -239,7 +239,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                 {phase.steps.map((step, idx) => {
                   const key = `${phase.id}_${idx}`;
                   const isDone = Boolean(progress.stepChecked[key]);
-                  const doneToday = stepTimerApi?.doneDay[key] === stepTimerApi?.today;
+                  const doneToday = stepTimerApi ? stepTimerApi.doneDay[key] === stepTimerApi.today : false;
                   const crossedOff = isDone || doneToday;
 
                   const ownTimer =

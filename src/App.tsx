@@ -436,6 +436,26 @@ export default function App() {
     setOpenCardId(null);
   };
 
+  const handleEditPlan = (planId: string) => {
+    const target = getAllPlans(appData).find((p) => p.id === planId);
+    if (!target) return;
+    if (target.builtIn) {
+      // Built-ins are read-only source constants — fork a personal, editable copy
+      // (progress carried over so the user continues mid-journey).
+      const newId = generatePlanId();
+      const { plan, progress: forkedProgress } = forkPlan(target, getPlanProgress(appData, planId), newId);
+      handleUpdateData((prev) => ({
+        ...prev,
+        customPlans: [...prev.customPlans, plan],
+        progressByPlan: { ...prev.progressByPlan, [newId]: forkedProgress },
+        activePlanId: newId
+      }));
+      setEditorState({ mode: 'edit', planId: newId });
+      return;
+    }
+    setEditorState({ mode: 'edit', planId });
+  };
+
   const handleDeletePlan = (planId: string) => {
     const target = getAllPlans(appData).find((p) => p.id === planId);
     if (!target || target.builtIn) return;
@@ -576,7 +596,7 @@ export default function App() {
               onDelete={handleDeletePlan}
               onImportFile={handleImportPlanFile}
               onCreate={() => setEditorState({ mode: 'new' })}
-              onEdit={(planId) => setEditorState({ mode: 'edit', planId })}
+              onEdit={handleEditPlan}
             />
           }
           onOpenStats={() => setShowStatsModal(true)}

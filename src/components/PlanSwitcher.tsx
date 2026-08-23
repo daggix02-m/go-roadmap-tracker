@@ -140,20 +140,25 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                     <Copy className="w-3.5 h-3.5" />
                   </button>
 
+                  <button
+                    role="menuitem"
+                    aria-label={`Edit ${plan.name}`}
+                    title={
+                      plan.builtIn
+                        ? `Copy ${plan.name} into an editable plan`
+                        : `Edit ${plan.name}`
+                    }
+                    onClick={() => {
+                      onEdit(plan.id);
+                      setIsOpen(false);
+                    }}
+                    className="p-1.5 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+
                   {!plan.builtIn && (
                     <>
-                      <button
-                        role="menuitem"
-                        aria-label={`Edit ${plan.name}`}
-                        title={`Edit ${plan.name}`}
-                        onClick={() => {
-                          onEdit(plan.id);
-                          setIsOpen(false);
-                        }}
-                        className="p-1.5 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
                       <button
                         role="menuitem"
                         aria-label={`Delete ${plan.name}`}
