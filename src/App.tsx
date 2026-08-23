@@ -62,6 +62,9 @@ const ConflictModal = lazy(() =>
 const PlanEditorModal = lazy(() =>
   import('./components/PlanEditorModal').then((m) => ({ default: m.PlanEditorModal }))
 );
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -74,6 +77,7 @@ export default function App() {
   const [showCheatsheetModal, setShowCheatsheetModal] = useState(false);
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Cross-device sync engine.
   const { pendingConflicts, resolveConflicts, syncing, lastPushedAt } = useSync();
@@ -416,7 +420,11 @@ export default function App() {
   const handleSelectPlan = (planId: string) => {
     setFilter({ section: 'ALL', searchQuery: '' });
     setOpenCardId(null);
-    handleUpdateData((prev) => ({ ...prev, activePlanId: planId }));
+    handleUpdateData((prev) => ({
+      ...prev,
+      activePlanId: planId,
+      activePlanUpdatedAt: Date.now()
+    }));
   };
 
   const handleForkPlan = (planId: string) => {
@@ -429,7 +437,8 @@ export default function App() {
         ...prev,
         customPlans: [...prev.customPlans, plan],
         progressByPlan: { ...prev.progressByPlan, [newId]: forkedProgress },
-        activePlanId: newId
+        activePlanId: newId,
+        activePlanUpdatedAt: Date.now()
       };
     });
     setFilter({ section: 'ALL', searchQuery: '' });
@@ -448,7 +457,8 @@ export default function App() {
         ...prev,
         customPlans: [...prev.customPlans, plan],
         progressByPlan: { ...prev.progressByPlan, [newId]: forkedProgress },
-        activePlanId: newId
+        activePlanId: newId,
+        activePlanUpdatedAt: Date.now()
       }));
       setEditorState({ mode: 'edit', planId: newId });
       return;
@@ -470,7 +480,9 @@ export default function App() {
         customPlans: prev.customPlans.filter((p) => p.id !== planId),
         progressByPlan: nextProgress,
         activePlanId:
-          prev.activePlanId === planId ? BUILT_IN_PLANS[0].id : prev.activePlanId
+          prev.activePlanId === planId ? BUILT_IN_PLANS[0].id : prev.activePlanId,
+        activePlanUpdatedAt:
+          prev.activePlanId === planId ? Date.now() : prev.activePlanUpdatedAt
       };
     });
   };
@@ -493,7 +505,8 @@ export default function App() {
         handleUpdateData((prev) => ({
           ...prev,
           customPlans: [...prev.customPlans, plan],
-          activePlanId: plan.id
+          activePlanId: plan.id,
+          activePlanUpdatedAt: Date.now()
         }));
         setFilter({ section: 'ALL', searchQuery: '' });
         setOpenCardId(null);
@@ -512,7 +525,8 @@ export default function App() {
         customPlans: exists
           ? prev.customPlans.map((p) => (p.id === saved.id ? saved : p))
           : [...prev.customPlans, saved],
-        activePlanId: saved.id
+        activePlanId: saved.id,
+        activePlanUpdatedAt: Date.now()
       };
     });
     setEditorState(null);
@@ -608,6 +622,7 @@ export default function App() {
           canInstallPwa={!!deferredPrompt}
           onTriggerPwaInstall={handleTriggerPwaInstall}
           onOpenAuthModal={() => setShowAuthModal(true)}
+          onOpenSettings={() => setShowSettingsModal(true)}
         />
 
         {timersBlob.focus &&
@@ -831,6 +846,15 @@ export default function App() {
             plan={editorState.mode === 'edit' ? editorTarget : null}
             onClose={() => setEditorState(null)}
             onSave={handleSavePlan}
+          />
+        )}
+
+        {showSettingsModal && (
+          <SettingsModal
+            settings={appData.settings}
+            onUpdateSettings={handleUpdateSettings}
+            appData={appData}
+            onClose={() => setShowSettingsModal(false)}
           />
         )}
       </Suspense>

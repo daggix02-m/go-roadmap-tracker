@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { Download, RotateCcw, Upload, X } from 'lucide-react';
 import { AppData, Plan, PlanProgress } from '../types';
 import { getActivityHistory, formatStudyMinutes, getProgressSummary } from '../data/progress';
-import { exportAppDataAsJSON, normalizeAppData, saveAppData } from '../utils/storage';
+import { exportAppDataAsJSON, getLocalDateString, normalizeAppData, saveAppData } from '../utils/storage';
 
 interface StatsModalProps {
   appData: AppData;
@@ -25,6 +25,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
 
   const summary = getProgressSummary(plan, progress);
   const activity = getActivityHistory(appData.global, 14);
+  const goalMinutes = appData.settings.dailyFocusGoal;
+  const todayMinutes = appData.global.historyMinutes[getLocalDateString()] ?? 0;
 
   const handleImportClick = () => {
     fileInputRef.current?.click();
@@ -182,6 +184,33 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Daily focus goal */}
+        {goalMinutes ? (
+          <div className="mt-3 p-3 rounded-lg bg-raised border border-line">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wider text-faint font-mono">
+                Today's focus
+              </span>
+              <span className="font-mono text-[11px] text-text">
+                {formatStudyMinutes(todayMinutes)} / {formatStudyMinutes(goalMinutes)}
+              </span>
+            </div>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-page overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ease-out ${
+                  todayMinutes >= goalMinutes ? 'bg-success' : 'bg-accent'
+                }`}
+                style={{ width: `${Math.min(100, Math.round((todayMinutes / goalMinutes) * 100))}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-muted mt-1.5">
+              {todayMinutes >= goalMinutes
+                ? 'Goal hit — nice work!'
+                : `${formatStudyMinutes(goalMinutes - todayMinutes)} to go. Set the goal in Settings.`}
+            </p>
+          </div>
+        ) : null}
 
         {/* Section breakdown */}
         {summary.parts.length > 1 && (

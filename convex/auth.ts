@@ -56,12 +56,20 @@ export const viewer = query({
     if (!userId) return null;
     const user = await ctx.db.get(userId);
     if (!user) return null;
+
+    // Avatar may be a Convex storageId (uploaded) or an external URL (OAuth).
+    // Resolve storageIds to a signed URL; leave URLs untouched.
+    let image: string | null = user.image ?? null;
+    if (image && !/^https?:\/\//i.test(image)) {
+      image = (await ctx.storage.getUrl(image)) ?? null;
+    }
+
     // Return only fields the UI needs — never the raw document (which may
     // grow sensitive fields like tokenIdentifier in the future).
     return {
       email: user.email ?? null,
       name: user.name ?? null,
-      image: user.image ?? null
+      image
     };
   }
 });

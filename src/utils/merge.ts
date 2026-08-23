@@ -11,9 +11,12 @@
  *   (once checked, stays checked on both sides).
  * - **completedPhases**: union (once completed, stays completed).
  * - **historyMinutes**: max-per-day union (no overwrites).
+ * - **global** (streak, lastActiveDate, historyDates, totalStudyMinutes):
+ *   best-of-both union (max streak/minutes, unioned dates, most-recent
+ *   active date). Streak reconciles on load via `calculateGlobalStreak`.
  * - **stepDurations**, **stepDoneDay**: newer wins per key (by value comparison).
- * - **settings** / **global** (except historyMinutes): last-write-wins
- *   (`lastModifiedAt`).
+ * - **settings** / **activePlanId**: last-write-wins (`lastModifiedAt` /
+ *   `activePlanUpdatedAt`).
  * - **customPlans**: union by `id`; tombstone (`deleted: true`) always wins
  *   over non-deleted.  Per-plan data LWW by `lastModifiedAt`.
  * - **progressByPlan**: merge each plan's progress independently LWW.
@@ -25,7 +28,7 @@
  * @module
  */
 
-import { AppData, PlanProgress, Plan } from '../types';
+import { AppData, PlanProgress, Plan, GlobalActivity } from '../types';
 
 // ---------------------------------------------------------------------------
 // Conflict record
@@ -73,6 +76,29 @@ function historyMinutesUnion(
     out[day] = Math.max(out[day] ?? 0, mins);
   }
   return out;
+}
+
+/**
+ * Merge `global` activity: best-of-both instead of LWW so streak, study
+ * minutes and active days carry across devices. Streak reconciles on load
+ * via `calculateGlobalStreak`, which is why we keep the higher scalar and
+ * the most recent active date.
+ */
+function mergeGlobal(
+  local: GlobalActivity,
+  remote: GlobalActivity
+): GlobalActivity {
+  const historyDates = [...new Set([...local.historyDates, ...remote.historyDates])];
+  return {
+    streak: Math.max(local.streak, remote.streak),
+    lastActiveDate:
+      (local.lastActiveDate ?? '') > (remote.lastActiveDate ?? '')
+        ? local.lastActiveDate
+        : remote.lastActiveDate,
+    historyDates,
+    totalStudyMinutes: Math.max(local.totalStudyMinutes, remote.totalStudyMinutes),
+    historyMinutes: historyMinutesUnion(local.historyMinutes, remote.historyMinutes)
+  };
 }
 
 /** LWW for a single record<string, V> by comparing values per key. */
@@ -231,7 +257,7 @@ export function threeWayMerge(
 ): MergeResult {
   const conflicts: Conflict[] = [];
 
-  // --- settings & global: LWW by lastModifiedAt ---
+  // --- settings & global ---
   const settings = lww(local.settings, remote.settings, local.lastModifiedAt, remote.lastModifiedAt);
   if (JSON.stringify(local.settings) !== JSON.stringify(remote.settings)) {
     conflicts.push({
@@ -242,11 +268,7 @@ export function threeWayMerge(
     });
   }
 
-  const historyMinutes = historyMinutesUnion(local.global.historyMinutes, remote.global.historyMinutes);
-  const globalActivity = {
-    ...lww(local.global, remote.global, local.lastModifiedAt, remote.lastModifiedAt),
-    historyMinutes
-  };
+  const globalActivity = mergeGlobal(local.global, remote.global);
 
   // --- custom plans ---
   const customPlans = mergePlans(local.customPlans, remote.customPlans, conflicts);

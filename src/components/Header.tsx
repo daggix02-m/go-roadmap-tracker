@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Timer, TerminalSquare, BarChart3, Download, Flame, MoreHorizontal } from 'lucide-react';
+import { Timer, TerminalSquare, BarChart3, Download, Flame, MoreHorizontal, Settings } from 'lucide-react';
 import { AccentColor, Plan } from '../types';
 import { ProgressSummary } from '../data/progress';
 import { AccountButton } from './AccountButton';
@@ -24,6 +24,7 @@ interface HeaderProps {
   canInstallPwa: boolean;
   onTriggerPwaInstall: () => void;
   onOpenAuthModal: () => void;
+  onOpenSettings: () => void;
 }
 
 const iconButtonClass =
@@ -40,7 +41,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenInstallGuide,
   canInstallPwa,
   onTriggerPwaInstall,
-  onOpenAuthModal
+  onOpenAuthModal,
+  onOpenSettings
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -164,6 +166,14 @@ export const Header: React.FC<HeaderProps> = ({
                     Stats
                   </button>
 
+                  <button
+                    onClick={() => { onOpenSettings(); setMenuOpen(false); }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
+                  >
+                    <Settings className="w-4 h-4 text-muted" />
+                    Settings
+                  </button>
+
                   {canInstallPwa ? (
                     <button
                       onClick={() => { onTriggerPwaInstall(); setMenuOpen(false); }}
@@ -195,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <div className="w-px h-5 bg-line ml-1" aria-hidden="true" />
-            <AccountButton onOpenAuthModal={onOpenAuthModal} />
+            <AccountButton onOpenAuthModal={onOpenAuthModal} onOpenSettings={onOpenSettings} />
           </div>
         </div>
 

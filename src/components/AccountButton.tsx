@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, LogOut, RefreshCw, Check, ExternalLink } from 'lucide-react';
+import { User, LogOut, Settings, RefreshCw, Check, ExternalLink } from 'lucide-react';
 import { useConvexAuth, useAuthActions } from '@convex-dev/auth/react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 
 interface AccountButtonProps {
   onOpenAuthModal: () => void;
+  onOpenSettings: () => void;
 }
 
 function getInitials(email: string): string {
@@ -15,7 +16,13 @@ function getInitials(email: string): string {
   return local.slice(0, 2).toUpperCase();
 }
 
-export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal }) => {
+function getNameInitials(name: string): string {
+  const parts = name.split(/[\s._\-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, onOpenSettings }) => {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
   const viewer = useQuery(api.auth.viewer);
@@ -81,7 +88,11 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal })
 
   // Signed-in state: avatar + popover.
   const email = viewer?.email ?? '';
-  const initials = email ? getInitials(email) : '??';
+  const name = viewer?.name ?? '';
+  const avatarUrl = viewer?.image ?? null;
+  const initials = avatarUrl
+    ? ''
+    : (name ? getNameInitials(name) : getInitials(email) || '??');
 
   return (
     <div className="relative">
@@ -91,10 +102,14 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal })
         aria-expanded={open}
         aria-haspopup="true"
         aria-label="Account menu"
-        className="w-8 h-8 rounded-full bg-accent text-page flex items-center justify-center text-xs font-bold font-mono transition-opacity hover:opacity-85 cursor-pointer"
-        title={email || 'Account'}
+        className="w-8 h-8 rounded-full bg-accent text-page flex items-center justify-center text-xs font-bold font-mono transition-opacity hover:opacity-85 cursor-pointer overflow-hidden"
+        title={name || email || 'Account'}
       >
-        {initials}
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
+        ) : (
+          initials
+        )}
       </button>
 
       {open && (
@@ -106,7 +121,8 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal })
         >
           {/* User info */}
           <div className="px-3 py-2 border-b border-line">
-            <p className="text-xs font-medium text-text truncate">{email || 'Signed in'}</p>
+            <p className="text-xs font-medium text-text truncate">{name || email || 'Signed in'}</p>
+            {name && <p className="text-[11px] text-faint truncate mt-0.5">{email}</p>}
             <div className="flex items-center gap-1.5 mt-1">
               <Check className="w-3 h-3 text-success" />
               <span className="text-[11px] text-faint font-mono">Synced</span>
@@ -114,6 +130,14 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal })
           </div>
 
           {/* Actions */}
+          <button
+            role="menuitem"
+            onClick={() => { setOpen(false); onOpenSettings(); }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Settings
+          </button>
           <button
             role="menuitem"
             onClick={() => { handleSignOut(); }}

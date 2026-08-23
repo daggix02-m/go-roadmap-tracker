@@ -67,6 +67,10 @@ export interface AppSettings {
   dailyReminderTime: string; // HH:MM 24h internally
   /** How times are displayed in the UI. */
   timeFormat: '12h' | '24h';
+  /** IANA timezone override for reminders; absent = browser default. */
+  timezone?: string;
+  /** Per-user daily study-minute goal shown in the stats graph. */
+  dailyFocusGoal?: number;
 }
 
 /** Streak/history shared across all plans. */

@@ -47,7 +47,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
 
     // Try push subscription first (works when app is closed).
     if (push.supported && !push.subscribed) {
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const tz = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
       await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
     }
 

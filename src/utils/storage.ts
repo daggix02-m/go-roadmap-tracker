@@ -35,7 +35,13 @@ function defaultAppData(): AppData {
     version: 2,
     activePlanId: 'go-roadmap',
     customPlans: [],
-    settings: { dailyReminderEnabled: false, dailyReminderTime: '09:00', timeFormat: '12h' },
+    settings: {
+      dailyReminderEnabled: false,
+      dailyReminderTime: '09:00',
+      timeFormat: '12h',
+      timezone: undefined,
+      dailyFocusGoal: undefined
+    },
     global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0, historyMinutes: {} },
     progressByPlan: {}
   };
@@ -67,6 +73,16 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
     }
     if (parsed.settings.timeFormat === '12h' || parsed.settings.timeFormat === '24h') {
       settings.timeFormat = parsed.settings.timeFormat;
+    }
+    if (typeof parsed.settings.timezone === 'string' && parsed.settings.timezone.length > 0) {
+      settings.timezone = parsed.settings.timezone;
+    }
+    if (
+      typeof parsed.settings.dailyFocusGoal === 'number' &&
+      Number.isFinite(parsed.settings.dailyFocusGoal) &&
+      parsed.settings.dailyFocusGoal > 0
+    ) {
+      settings.dailyFocusGoal = Math.round(parsed.settings.dailyFocusGoal);
     }
   }
 
@@ -201,7 +217,12 @@ export function calculateGlobalStreak(global: GlobalActivity): GlobalActivity {
 
 export function saveAppData(data: AppData): void {
   try {
-    localStorage.setItem(STORAGE_KEY_V2, JSON.stringify(data));
+    // Bump the LWW timestamp so the last-writing device wins for global/settings
+    // fields during cross-device merge (see utils/merge.ts).
+    localStorage.setItem(
+      STORAGE_KEY_V2,
+      JSON.stringify({ ...data, lastModifiedAt: Date.now() })
+    );
   } catch (err) {
     console.error('Failed to save app data:', err);
   }
