@@ -1,4 +1,4 @@
-const CACHE_NAME = 'go-tracker-pwa-v4';
+const CACHE_NAME = 'go-tracker-pwa-v5';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -30,18 +30,43 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        // Fetch fresh in background
-        fetch(event.request).then((networkResponse) => {
+
+  const request = event.request;
+
+  // Network-first for HTML navigations so the page always matches the
+  // currently-deployed hashed assets. Fall back to cache only when offline.
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse));
+            const copy = networkResponse.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
           }
-        }).catch(() => {});
+          return networkResponse;
+        })
+        .catch(() =>
+          caches.match(request).then((cached) => cached || caches.match('/index.html'))
+        )
+    );
+    return;
+  }
+
+  // Cache-first (stale-while-revalidate) for hashed static assets, which are
+  // immutable and safe to serve from cache while refreshing in the background.
+  event.respondWith(
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        fetch(request)
+          .then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, networkResponse));
+            }
+          })
+          .catch(() => {});
         return cachedResponse;
       }
-      return fetch(event.request).catch(() => caches.match('/index.html'));
+      return fetch(request).catch(() => caches.match('/index.html'));
     })
   );
 });
