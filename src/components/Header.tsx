@@ -79,15 +79,6 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Actions */}
           <div className="flex items-center gap-1 shrink-0">
-            {/* Streak — hidden on very small screens */}
-            <div
-              className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-md border border-line text-xs font-medium text-warning"
-              title={`${streak}-day streak`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span className="font-mono">{streak}d</span>
-            </div>
-
             {/* Desktop: show all buttons inline */}
             <div className="hidden md:flex items-center gap-1">
               <button id="header-timer-btn" onClick={onOpenTimer} className={iconButtonClass} title="Focus timer">
@@ -147,12 +138,6 @@ export const Header: React.FC<HeaderProps> = ({
 
               {menuOpen && (
                 <div className="absolute right-0 top-full mt-1 z-50 bg-raised border border-line rounded-lg shadow-lg py-1 min-w-[160px]">
-                  {/* Streak on mobile */}
-                  <div className="flex items-center gap-2 px-3 py-2 text-xs text-warning border-b border-line">
-                    <Flame className="w-3.5 h-3.5" />
-                    <span className="font-mono font-medium">{streak}-day streak</span>
-                  </div>
-
                   <button
                     onClick={() => { onOpenTimer(); setMenuOpen(false); }}
                     className="flex items-center gap-2 px-3 py-2 text-xs text-text hover:bg-hover w-full text-left cursor-pointer"
@@ -198,6 +183,15 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Streak badge — always visible */}
+            <div
+              className="flex items-center gap-1 px-2 py-1 rounded-md border border-line text-xs font-medium text-warning"
+              title={`${streak}-day streak`}
+            >
+              <Flame className="w-3.5 h-3.5" />
+              <span className="font-mono">{streak}d</span>
             </div>
 
             <div className="w-px h-5 bg-line ml-1" aria-hidden="true" />
