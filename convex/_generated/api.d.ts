@@ -10,6 +10,7 @@
 
 import type * as auth from "../auth.js";
 import type * as cron from "../cron.js";
+import type * as http from "../http.js";
 import type * as profile from "../profile.js";
 import type * as push from "../push.js";
 import type * as reminders from "../reminders.js";
@@ -24,6 +25,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   cron: typeof cron;
+  http: typeof http;
   profile: typeof profile;
   push: typeof push;
   reminders: typeof reminders;

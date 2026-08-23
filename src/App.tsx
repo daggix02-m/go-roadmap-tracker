@@ -855,6 +855,7 @@ export default function App() {
             onUpdateSettings={handleUpdateSettings}
             appData={appData}
             onClose={() => setShowSettingsModal(false)}
+            onOpenAuthModal={() => setShowAuthModal(true)}
           />
         )}
       </Suspense>

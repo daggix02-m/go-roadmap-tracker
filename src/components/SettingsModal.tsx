@@ -13,7 +13,7 @@ import {
   X
 } from 'lucide-react';
 import { useQuery, useMutation, useAction } from 'convex/react';
-import { useAuthActions } from '@convex-dev/auth/react';
+import { useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
 import { AppData, AppSettings } from '../types';
 import { exportAppDataAsJSON } from '../utils/storage';
@@ -23,6 +23,8 @@ interface SettingsModalProps {
   onUpdateSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   appData: AppData;
   onClose: () => void;
+  /** Opens the sign-in/sign-up modal (used by the signed-out state). */
+  onOpenAuthModal: () => void;
 }
 
 const FALLBACK_TIMEZONES = [
@@ -58,13 +60,32 @@ function getInitials(name: string, email: string): string {
   return source.slice(0, 2).toUpperCase();
 }
 
+/**
+ * Translate raw Convex/auth error strings into user-friendly copy.
+ * The most common failure in Settings is a stored token the backend can't
+ * verify ("Not authenticated" / "Failed to authenticate") — usually an
+ * expired or invalidated session, not a real action failure.
+ */
+function authErrorMessage(msg: string): string {
+  if (
+    msg.toLowerCase().includes('not authenticated') ||
+    msg.toLowerCase().includes('failed to authenticate') ||
+    msg.toLowerCase().includes('no auth provider found')
+  ) {
+    return 'Session expired — please sign in again.';
+  }
+  return msg;
+}
+
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   onUpdateSettings,
   appData,
-  onClose
+  onClose,
+  onOpenAuthModal
 }) => {
   const { signOut } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const viewer = useQuery(api.auth.viewer);
   const updateProfile = useMutation(api.profile.updateProfile);
   const generateUploadUrl = useMutation(api.profile.generateUploadUrl);
@@ -73,6 +94,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const deleteAccount = useMutation(api.profile.deleteAccount);
 
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Server-verified session: `viewer` is null when the stored token can't be
+  // verified (expired/invalidated), even if the client still thinks it's
+  // signed in. Gate account-management sections on it so users never see
+  // dead buttons.
+  const sessionLoading = viewer === undefined;
+  const sessionOk = viewer !== null;
 
   // --- profile form ---
   const [name, setName] = useState(viewer?.name ?? '');
@@ -83,9 +111,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     if (!nameEdited.current && viewer?.name) setName(viewer.name);
   }, [viewer?.name]);
   const [nameSaving, setNameSaving] = useState(false);
+  const [nameMsg, setNameMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  const [avatarMsg, setAvatarMsg] = useState<string | null>(null);
+  const [avatarMsg, setAvatarMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // --- email form ---
   const [email, setEmail] = useState('');
@@ -108,6 +137,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // --- delete account ---
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const email_ = viewer?.email ?? '';
   const displayName = viewer?.name ?? '';
@@ -115,8 +145,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const saveName = async () => {
     setNameSaving(true);
+    setNameMsg(null);
     try {
       await updateProfile({ name });
+      setNameMsg({ ok: true, text: 'Name saved.' });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      setNameMsg({ ok: false, text: authErrorMessage(msg) });
     } finally {
       setNameSaving(false);
     }
@@ -128,19 +163,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       setAvatarPreview(URL.createObjectURL(file));
       const uploadUrl = await generateUploadUrl();
+      // Convex storage rejects requests whose Content-Type is empty (e.g.
+      // HEIC/camera captures where file.type is ''). Fall back to a generic
+      // type so the upload still works.
+      const contentType = file.type || 'application/octet-stream';
       const res = await fetch(uploadUrl, {
         method: 'POST',
-        headers: { 'Content-Type': file.type },
+        headers: { 'Content-Type': contentType },
         body: file
       });
       if (!res.ok) throw new Error('Upload failed');
       const { storageId } = await res.json();
       await updateProfile({ image: storageId });
       setAvatarPreview(null);
-      setAvatarMsg('Photo updated.');
-    } catch {
+      setAvatarMsg({ ok: true, text: 'Photo updated.' });
+    } catch (err) {
       setAvatarPreview(null);
-      setAvatarMsg('Upload failed — try a smaller image.');
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      setAvatarMsg({ ok: false, text: authErrorMessage(msg) });
     } finally {
       setAvatarBusy(false);
     }
@@ -175,7 +215,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           ? 'Current password is incorrect.'
           : msg.toLowerCase().includes('duplicate')
             ? 'That email is already in use.'
-            : msg
+            : authErrorMessage(msg)
       });
     } finally {
       setEmailBusy(false);
@@ -203,7 +243,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const msg = err instanceof Error ? err.message : 'Something went wrong.';
       setPwMsg({
         ok: false,
-        text: msg.includes('InvalidSecret') ? 'Current password is incorrect.' : msg
+        text: msg.includes('InvalidSecret')
+          ? 'Current password is incorrect.'
+          : authErrorMessage(msg)
       });
     } finally {
       setPwBusy(false);
@@ -227,16 +269,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const handleDeleteAccount = async () => {
     if (!confirmDelete) {
       setConfirmDelete(true);
+      setDeleteMsg(null);
       return;
     }
     setDeleteBusy(true);
+    setDeleteMsg(null);
     try {
       await deleteAccount();
       localStorage.removeItem('plan_tracker_v2');
       localStorage.removeItem('plan_tracker_last_synced');
       await signOut();
       window.location.reload();
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Something went wrong.';
+      setDeleteMsg({ ok: false, text: authErrorMessage(msg) });
       setDeleteBusy(false);
       setConfirmDelete(false);
     }
@@ -270,6 +316,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="px-5 py-4 space-y-6">
+          {sessionLoading ? (
+            <div className="py-10 text-center text-sm text-muted">Loading account…</div>
+          ) : !sessionOk ? (
+            <div className="py-6 text-center">
+              <h3 className="text-sm font-semibold text-text">Account</h3>
+              <p className="text-[11px] text-muted mt-1 mb-3">
+                {isAuthenticated
+                  ? 'Your session has expired. Sign in again to manage your profile and data.'
+                  : 'Sign in to sync your progress, manage your profile, and back up your data.'}
+              </p>
+              <button
+                onClick={onOpenAuthModal}
+                className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
+              >
+                Sign in
+              </button>
+            </div>
+          ) : (
+            <>
           {/* Profile */}
           <section className="space-y-3">
             <h3 className={labelClass}>Profile</h3>
@@ -322,7 +387,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Remove photo
                   </button>
                 )}
-                {avatarMsg && <span className="text-[11px] text-muted">{avatarMsg}</span>}
+                {avatarMsg && (
+                  <span
+                    className={`text-[11px] ${avatarMsg.ok ? 'text-success' : 'text-danger'}`}
+                    role={avatarMsg.ok ? 'status' : 'alert'}
+                  >
+                    {avatarMsg.text}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -354,6 +426,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               >
                 {nameSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
               </button>
+              {nameMsg && (
+                <p
+                  className={`text-[11px] mt-1 ${nameMsg.ok ? 'text-success' : 'text-danger'}`}
+                  role={nameMsg.ok ? 'status' : 'alert'}
+                >
+                  {nameMsg.text}
+                </p>
+              )}
             </div>
 
             {/* Email */}
@@ -440,7 +520,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             )}
           </section>
 
-          {/* Preferences */}
+          {/* Data */}
+          <section className="space-y-2.5 pt-4 border-t border-line">
+            <h3 className={labelClass}>Data</h3>
+            <button
+              onClick={() => exportAppDataAsJSON(appData)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export account data
+            </button>
+
+            <div className="p-3 rounded-lg border border-danger/30 bg-danger/5">
+              <p className="text-xs text-danger font-medium">Delete account</p>
+              <p className="text-[11px] text-muted mt-1 leading-relaxed">
+                Permanently removes your cloud data (plans, progress, streak) and sign-in. This
+                cannot be undone.
+              </p>
+              <button
+                onClick={handleDeleteAccount}
+                disabled={deleteBusy}
+                className={`mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
+                  confirmDelete
+                    ? 'border-danger bg-danger text-page'
+                    : 'border-danger/40 text-danger/80 hover:text-danger hover:border-danger/60'
+                }`}
+              >
+                {deleteBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                )}
+                {confirmDelete ? 'Click again to confirm' : 'Delete account'}
+              </button>
+              {deleteMsg && (
+                <p
+                  className={`text-[11px] mt-2 ${deleteMsg.ok ? 'text-success' : 'text-danger'}`}
+                  role={deleteMsg.ok ? 'status' : 'alert'}
+                >
+                  {deleteMsg.text}
+                </p>
+              )}
+            </div>
+          </section>
+            </>
+          )}
+
+          {/* Preferences — local-only settings, work even when signed out */}
           <section className="space-y-3">
             <h3 className={labelClass}>Preferences</h3>
 
@@ -496,42 +622,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               Save preferences
             </button>
             {prefsMsg && <p className="text-[11px] text-success">{prefsMsg}</p>}
-          </section>
-
-          {/* Data */}
-          <section className="space-y-2.5 pt-4 border-t border-line">
-            <h3 className={labelClass}>Data</h3>
-            <button
-              onClick={() => exportAppDataAsJSON(appData)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export account data
-            </button>
-
-            <div className="p-3 rounded-lg border border-danger/30 bg-danger/5">
-              <p className="text-xs text-danger font-medium">Delete account</p>
-              <p className="text-[11px] text-muted mt-1 leading-relaxed">
-                Permanently removes your cloud data (plans, progress, streak) and sign-in. This
-                cannot be undone.
-              </p>
-              <button
-                onClick={handleDeleteAccount}
-                disabled={deleteBusy}
-                className={`mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 ${
-                  confirmDelete
-                    ? 'border-danger bg-danger text-page'
-                    : 'border-danger/40 text-danger/80 hover:text-danger hover:border-danger/60'
-                }`}
-              >
-                {deleteBusy ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                )}
-                {confirmDelete ? 'Click again to confirm' : 'Delete account'}
-              </button>
-            </div>
           </section>
         </div>
       </div>
