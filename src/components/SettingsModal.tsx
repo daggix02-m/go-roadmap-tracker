@@ -17,6 +17,7 @@ import { useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
 import { AppData, AppSettings } from '../types';
 import { exportAppDataAsJSON } from '../utils/storage';
+import { authErrorMessage } from '../utils/authErrors';
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -58,23 +59,6 @@ function getInitials(name: string, email: string): string {
   const parts = source.split(/[._\-\s]+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return source.slice(0, 2).toUpperCase();
-}
-
-/**
- * Translate raw Convex/auth error strings into user-friendly copy.
- * The most common failure in Settings is a stored token the backend can't
- * verify ("Not authenticated" / "Failed to authenticate") — usually an
- * expired or invalidated session, not a real action failure.
- */
-function authErrorMessage(msg: string): string {
-  if (
-    msg.toLowerCase().includes('not authenticated') ||
-    msg.toLowerCase().includes('failed to authenticate') ||
-    msg.toLowerCase().includes('no auth provider found')
-  ) {
-    return 'Session expired — please sign in again.';
-  }
-  return msg;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({

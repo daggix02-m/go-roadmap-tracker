@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Mail, Lock, User, Loader2, AlertCircle } from 'lucide-react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from '@convex-dev/auth/react';
+import { authErrorMessage } from '../utils/authErrors';
 
 type Mode = 'signIn' | 'signUp';
 
@@ -88,18 +89,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
       });
       onClose();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'Something went wrong.';
-      // Surface meaningful errors from the auth backend.
-      if (msg.includes('already exists') || msg.includes('duplicate')) {
-        setError('An account with this email already exists. Try signing in.');
-      } else if (
-        msg.includes('Invalid credentials') ||
-        msg.includes('Invalid password')
-      ) {
-        setError('Invalid email or password.');
+      const msg = err instanceof Error ? err.message : '';
+      if (mode === 'signUp') {
+        // Duplicate account is the only common sign-up failure; anything else
+        // gets a generic message rather than leaking backend internals.
+        setError(
+          msg.includes('already exists') || msg.includes('duplicate')
+            ? 'An account with this email already exists. Try signing in.'
+            : 'Could not create your account. Please try again.'
+        );
       } else {
-        setError(msg);
+        const friendly = authErrorMessage(msg);
+        // authErrorMessage passes through unrecognized messages; for sign-in
+        // those are always backend codes, so hide them behind generic copy.
+        setError(friendly && friendly !== msg ? friendly : 'Could not sign in. Please try again.');
       }
     } finally {
       setLoading(false);
