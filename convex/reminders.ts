@@ -8,6 +8,87 @@ import { internal } from './_generated/api';
 import { v } from 'convex/values';
 
 // ---------------------------------------------------------------------------
+// Reminder schedule model
+// ---------------------------------------------------------------------------
+//
+// Reminders fire every 2 hours through the day, starting at 5:00 and ending
+// at 23:00 local time (the "12pm" end time from the original request is
+// interpreted as the last useful slot of the day). Times are computed in the
+// user's own timezone so a reminder never fires at the wrong local hour.
+
+const SLOT_HOURS = [5, 7, 9, 11, 13, 15, 17, 19, 21, 23];
+
+/** Calendar parts (year, month, day, hour) of `epochMs` in `tz`. */
+function zonedParts(tz: string, epochMs: number): { y: number; m: number; d: number; h: number } {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  const parts = Object.fromEntries(
+    dtf.formatToParts(new Date(epochMs)).map((p) => [p.type, p.value])
+  );
+  return {
+    y: Number(parts.year),
+    m: Number(parts.month),
+    d: Number(parts.day),
+    h: Number(parts.hour) % 24
+  };
+}
+
+/** Epoch ms of the wall-clock time (y-m-d hh:mm) in `tz`. */
+function zonedEpoch(tz: string, y: number, m: number, d: number, h: number, min: number): number {
+  // Guess using UTC, then correct by the offset at that wall time.
+  const guess = Date.UTC(y, m - 1, d, h, min);
+  const offset = tzOffsetMs(tz, guess);
+  return guess - offset;
+}
+
+/** Timezone offset (ms) of `tz` at the given epoch — positive when ahead of UTC. */
+function tzOffsetMs(tz: string, epochMs: number): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+  const parts = Object.fromEntries(
+    dtf.formatToParts(new Date(epochMs)).map((p) => [p.type, p.value])
+  );
+  const asUTC = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  return asUTC - epochMs;
+}
+
+/** Next reminder slot strictly after `now` in `tz` (never the same minute). */
+function nextSlotAfter(tz: string, now: number): number {
+  const p = zonedParts(tz, now);
+  for (const h of SLOT_HOURS) {
+    const cand = zonedEpoch(tz, p.y, p.m, p.d, h, 0);
+    if (cand > now) return cand;
+  }
+  // Roll to tomorrow 05:00 (wall-clock, DST-safe).
+  const todayStart = zonedEpoch(tz, p.y, p.m, p.d, 0, 0);
+  const tomorrowStart = todayStart + 24 * 60 * 60 * 1000;
+  const tp = zonedParts(tz, tomorrowStart);
+  return zonedEpoch(tz, tp.y, tp.m, tp.d, SLOT_HOURS[0], 0);
+}
+
+// ---------------------------------------------------------------------------
 // Cron helpers (internal only — not callable from clients)
 // ---------------------------------------------------------------------------
 //
@@ -51,7 +132,7 @@ export const removeSubscription = internalMutation({
   }
 });
 
-/** Advance a schedule by +1 day (same local time). */
+/** Advance a schedule to the next 2-hour reminder slot (same local day window). */
 export const advanceSchedule = internalMutation({
   args: { userId: v.id('users'), now: v.number() },
   handler: async (ctx, args) => {
@@ -60,9 +141,8 @@ export const advanceSchedule = internalMutation({
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .first();
     if (!sched) return;
-    // +24h is safe for DST because nextFireAt is in epoch ms;
-    // the client re-computes the next local time when updating.
-    await ctx.db.patch(sched._id, { nextFireAt: args.now + 24 * 60 * 60 * 1000 });
+    const next = nextSlotAfter(sched.tz, args.now);
+    await ctx.db.patch(sched._id, { nextFireAt: next });
   }
 });
 
@@ -90,13 +170,14 @@ export const getVapidKey = query({
   }
 });
 
-/** Subscribe: upsert subscription + upsert schedule. */
+/** Subscribe: upsert subscription + schedule reminders every 2h (5:00–23:00 local). */
 export const subscribe = mutation({
   args: {
     endpoint: v.string(),
     subscriptionJson: v.string(),
-    reminderTime: v.string(),   // HH:MM 24h
-    tz: v.string()              // IANA tz
+    reminderTime: v.string(),   // HH:MM 24h (kept for display compat)
+    tz: v.string(),             // IANA tz
+    activePhaseLabel: v.optional(v.string())
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -117,12 +198,8 @@ export const subscribe = mutation({
       });
     }
 
-    // Compute next fire time from reminderTime + tz.
-    const [h, m] = args.reminderTime.split(':').map(Number);
-    const now = new Date();
-    const next = new Date(now);
-    next.setHours(h, m, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
+    // Next 2-hour reminder slot in the user's timezone (5:00–23:00).
+    const nextFireAt = nextSlotAfter(args.tz, Date.now());
 
     // Upsert schedule.
     const sched = await ctx.db
@@ -130,12 +207,13 @@ export const subscribe = mutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .first();
     if (sched) {
-      await ctx.db.patch(sched._id, { nextFireAt: next.getTime(), tz: args.tz });
+      await ctx.db.patch(sched._id, { nextFireAt, tz: args.tz, activePhaseLabel: args.activePhaseLabel });
     } else {
       await ctx.db.insert('reminderSchedule', {
         userId,
-        nextFireAt: next.getTime(),
-        tz: args.tz
+        nextFireAt,
+        tz: args.tz,
+        activePhaseLabel: args.activePhaseLabel
       });
     }
   }
@@ -185,7 +263,9 @@ export const triggerReminders = internalAction({
           endpoint: sub.endpoint,
           subscriptionJson: sub.subscriptionJson,
           title: 'Time to study! 📚',
-          body: "Don't break your streak — open the app and tackle your next step.",
+          body: entry.activePhaseLabel
+            ? `Keep going — next up: ${entry.activePhaseLabel}. Open the app and tackle your next step.`
+            : "Don't break your streak — open the app and tackle your next step.",
           tag: 'daily-reminder'
         });
 

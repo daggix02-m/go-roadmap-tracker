@@ -25,7 +25,6 @@ import {
 export interface StepTimerApi {
   /** The one app-level step timer (null = none). */
   timer: TimerState | null;
-  nowMs: number;
   /** Persisted per-step duration overrides from plan progress. */
   durations: Record<string, number>;
   /** key -> 'YYYY-MM-DD' the step was marked done via its countdown. */
@@ -45,6 +44,8 @@ interface PhaseCardProps {
   isOpen: boolean;
   isActive: boolean;
   stepTimerApi?: StepTimerApi;
+  /** Live epoch-ms clock. Only the card owning the running step timer needs this to tick. */
+  nowMs: number;
   onToggleOpen: () => void;
   onToggleStep: (phaseId: number, stepIndex: number) => void;
   onToggleCriteria: (phaseId: number, criteriaIndex: number) => void;
@@ -56,19 +57,20 @@ interface PhaseCardProps {
 const sectionLabelClass =
   'text-[11px] font-medium uppercase tracking-wider text-faint mb-2 font-mono';
 
-export const PhaseCard: React.FC<PhaseCardProps> = ({
+export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard({
   phase,
   progress,
   isOpen,
   isActive,
   stepTimerApi,
+  nowMs,
   onToggleOpen,
   onToggleStep,
   onToggleCriteria,
   onCompletePhase,
   onSaveNote,
   onSelectConcept
-}) => {
+}) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [noteContent, setNoteContent] = useState(progress.userNotes[phase.id] || '');
   const [showGateWarning, setShowGateWarning] = useState(false);
@@ -246,7 +248,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
                     stepTimerApi.timer.stepIdx === idx
                       ? stepTimerApi.timer
                       : null;
-                  const ownRemaining = ownTimer ? remainingSeconds(ownTimer, stepTimerApi.nowMs) : 0;
+                  const ownRemaining = ownTimer ? remainingSeconds(ownTimer, nowMs) : 0;
                   const ownExpired = !!ownTimer && ownRemaining <= 0;
                   const effectiveDuration = stepTimerApi?.durations[key] ?? STEP_TIMER_DEFAULT_SEC;
 
@@ -533,4 +535,4 @@ export const PhaseCard: React.FC<PhaseCardProps> = ({
       )}
     </article>
   );
-};
+});

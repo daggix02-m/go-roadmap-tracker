@@ -34,7 +34,7 @@ export interface PushState {
 }
 
 export interface PushActions {
-  subscribe: (reminderTime: string, tz: string) => Promise<void>;
+  subscribe: (reminderTime: string, tz: string, activePhaseLabel?: string) => Promise<void>;
   unsubscribe: () => Promise<void>;
 }
 
@@ -64,7 +64,7 @@ export function usePushSubscription(): PushState & PushActions {
   }, [pushSupported]);
 
   const subscribe = useCallback(
-    async (reminderTime: string, tz: string) => {
+    async (reminderTime: string, tz: string, activePhaseLabel?: string) => {
       if (!pushSupported || !vapidKey) return;
       setLoading(true);
       try {
@@ -78,7 +78,8 @@ export function usePushSubscription(): PushState & PushActions {
           endpoint: sub.endpoint,
           subscriptionJson: JSON.stringify(sub.toJSON()),
           reminderTime,
-          tz
+          tz,
+          activePhaseLabel
         });
         setSubscribed(true);
       } catch (err) {

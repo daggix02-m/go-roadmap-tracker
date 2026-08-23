@@ -44,7 +44,9 @@ export default defineSchema({
     /** Next time the cron should fire (epoch ms). */
     nextFireAt: v.number(),
     /** IANA time-zone, e.g. 'Africa/Addis_Ababa'. */
-    tz: v.string()
+    tz: v.string(),
+    /** Human-readable current goal shown in the push, e.g. "Phase 7 — Maps". */
+    activePhaseLabel: v.optional(v.string())
   })
     .index('by_user', ['userId'])
     .index('by_next_fire', ['nextFireAt'])

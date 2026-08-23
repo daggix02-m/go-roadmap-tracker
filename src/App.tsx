@@ -1,13 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { Header } from './components/Header';
 import { NotificationBanner } from './components/NotificationBanner';
 import { FilterBar } from './components/FilterBar';
 import { PhaseCard } from './components/PhaseCard';
 import { DailyFocusBar } from './components/DailyFocusBar';
-import { StudyTimerModal } from './components/StudyTimerModal';
-import { StatsModal } from './components/StatsModal';
-import { GoCheatsheetModal } from './components/GoCheatsheetModal';
-import { InstallGuideModal } from './components/InstallGuideModal';
 import { AppData, AppSettings, FilterState, Plan, PlanProgress, SECTION_FILTER_PREFIX } from './types';
 import {
   loadAppData,
@@ -39,12 +35,33 @@ import {
   formatCountdown
 } from './utils/timerEngine';
 import { PlanSwitcher } from './components/PlanSwitcher';
-import { PlanEditorModal } from './components/PlanEditorModal';
 import { ContributionGraph } from './components/ContributionGraph';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
-import { AuthModal } from './components/AuthModal';
-import { ConflictModal } from './components/ConflictModal';
 import { useSync } from './utils/useSync';
+
+// Heavy modals are lazy-loaded so they don't ship in the initial bundle.
+// They only render after the user opens them (stats, timer, cheatsheet, etc.).
+const StudyTimerModal = lazy(() =>
+  import('./components/StudyTimerModal').then((m) => ({ default: m.StudyTimerModal }))
+);
+const StatsModal = lazy(() =>
+  import('./components/StatsModal').then((m) => ({ default: m.StatsModal }))
+);
+const GoCheatsheetModal = lazy(() =>
+  import('./components/GoCheatsheetModal').then((m) => ({ default: m.GoCheatsheetModal }))
+);
+const InstallGuideModal = lazy(() =>
+  import('./components/InstallGuideModal').then((m) => ({ default: m.InstallGuideModal }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
+const ConflictModal = lazy(() =>
+  import('./components/ConflictModal').then((m) => ({ default: m.ConflictModal }))
+);
+const PlanEditorModal = lazy(() =>
+  import('./components/PlanEditorModal').then((m) => ({ default: m.PlanEditorModal }))
+);
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -125,17 +142,21 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Periodic daily reminder check
+  const handleToggleOpen = useCallback((phaseId: number) => {
+    setOpenCardId((prev) => (prev === phaseId ? null : phaseId));
+  }, []);
+
+  // Periodic in-app reminder check — every 2 hours (5 AM–11 PM local time).
   useEffect(() => {
     if (!appData.settings.dailyReminderEnabled || !activePhase) return;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
 
     const interval = setInterval(() => {
       const now = new Date();
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const currentTime = `${hours}:${minutes}`;
-
-      if (currentTime === appData.settings.dailyReminderTime) {
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      // Fire once per 2-hour slot, on the first minute of the hour.
+      if (minute === 0 && hour >= 5 && hour <= 23 && hour % 2 === 1) {
         sendDailyReminderNotification(activePhase, appData.global.streak, activePlan.name);
       }
     }, 60000);
@@ -143,33 +164,32 @@ export default function App() {
     return () => clearInterval(interval);
   }, [
     appData.settings.dailyReminderEnabled,
-    appData.settings.dailyReminderTime,
     appData.global.streak,
     activePhase,
     activePlan.name
   ]);
 
   // Save state helper
-  const handleUpdateData = (updater: (prev: AppData) => AppData) => {
+  const handleUpdateData = useCallback((updater: (prev: AppData) => AppData) => {
     setAppData((prev) => {
       const next = updater(prev);
       saveAppData(next);
       return next;
     });
-  };
+  }, []);
 
   // Direct state reload (for stats modal import/reset)
-  const handleStateReload = (newState: AppData) => {
+  const handleStateReload = useCallback((newState: AppData) => {
     setAppData(newState);
     saveAppData(newState);
-  };
+  }, []);
 
-  const handleUpdateSettings = (updater: (prev: AppSettings) => AppSettings) => {
+  const handleUpdateSettings = useCallback((updater: (prev: AppSettings) => AppSettings) => {
     handleUpdateData((prev) => ({ ...prev, settings: updater(prev.settings) }));
-  };
+  }, [handleUpdateData]);
 
   /** Mutates only the active plan's progress object. */
-  const updateProgress = (mutate: (prev: PlanProgress) => PlanProgress) => {
+  const updateProgress = useCallback((mutate: (prev: PlanProgress) => PlanProgress) => {
     handleUpdateData((prev) => ({
       ...prev,
       progressByPlan: {
@@ -177,9 +197,9 @@ export default function App() {
         [activePlan.id]: mutate(prev.progressByPlan[activePlan.id] ?? emptyPlanProgress())
       }
     }));
-  };
+  }, [handleUpdateData, activePlan.id]);
 
-  const handleToggleCriteria = (phaseId: number, criteriaIndex: number) => {
+  const handleToggleCriteria = useCallback((phaseId: number, criteriaIndex: number) => {
     updateProgress((prev) => ({
       ...prev,
       criteriaChecked: {
@@ -187,9 +207,9 @@ export default function App() {
         [`${phaseId}_${criteriaIndex}`]: !prev.criteriaChecked[`${phaseId}_${criteriaIndex}`]
       }
     }));
-  };
+  }, [updateProgress]);
 
-  const handleToggleStep = (phaseId: number, stepIndex: number) => {
+  const handleToggleStep = useCallback((phaseId: number, stepIndex: number) => {
     updateProgress((prev) => ({
       ...prev,
       stepChecked: {
@@ -197,9 +217,9 @@ export default function App() {
         [`${phaseId}_${stepIndex}`]: !prev.stepChecked[`${phaseId}_${stepIndex}`]
       }
     }));
-  };
+  }, [updateProgress]);
 
-  const handleToggleComplete = (phaseId: number) => {
+  const handleToggleComplete = useCallback((phaseId: number) => {
     const isAlreadyComplete = progress.completedPhases.includes(phaseId);
 
     if (isAlreadyComplete) {
@@ -229,9 +249,9 @@ export default function App() {
       };
       return logStudyActivity(withCompletion, activePlan.id, phaseId, 0);
     });
-  };
+  }, [updateProgress, handleUpdateData, progress, activePlan]);
 
-  const handleSaveNote = (phaseId: number, note: string) => {
+  const handleSaveNote = useCallback((phaseId: number, note: string) => {
     updateProgress((prev) => ({
       ...prev,
       userNotes: {
@@ -239,7 +259,7 @@ export default function App() {
         [phaseId]: note
       }
     }));
-  };
+  }, [updateProgress]);
 
   const handleLogStudySession = (minutes: number) => {
     if (!activePhase) return;
@@ -272,7 +292,7 @@ export default function App() {
   const stepDurations = progress.stepDurations ?? {};
   const stepDoneDay = progress.stepDoneDay ?? {};
 
-  const handleStartStepTimer = (phaseId: number, stepIdx: number) => {
+  const handleStartStepTimer = useCallback((phaseId: number, stepIdx: number) => {
     const durationSec =
       stepDurations[`${phaseId}_${stepIdx}`] ?? STEP_TIMER_DEFAULT_SEC;
     setTimersBlob((prev) => ({
@@ -280,21 +300,24 @@ export default function App() {
       // Starting a new step replaces any previous one — only one runs at a time.
       step: startTimer(createTimer('step', durationSec, { phaseId, stepIdx }), Date.now())
     }));
-  };
-  const handlePauseStepTimer = () =>
+  }, [stepDurations]);
+
+  const handlePauseStepTimer = useCallback(() =>
     setTimersBlob((prev) => ({
       ...prev,
       step: prev.step ? pauseTimer(prev.step, Date.now()) : null
-    }));
-  const handleResumeStepTimer = () =>
+    })), []);
+
+  const handleResumeStepTimer = useCallback(() =>
     setTimersBlob((prev) => ({
       ...prev,
       step: prev.step ? startTimer(prev.step, Date.now()) : null
-    }));
-  const handleCancelStepTimer = () =>
-    setTimersBlob((prev) => ({ ...prev, step: null }));
+    })), []);
 
-  const handleSetStepDuration = (phaseId: number, stepIdx: number, sec: number) => {
+  const handleCancelStepTimer = useCallback(() =>
+    setTimersBlob((prev) => ({ ...prev, step: null })), []);
+
+  const handleSetStepDuration = useCallback((phaseId: number, stepIdx: number, sec: number) => {
     const key = `${phaseId}_${stepIdx}`;
     updateProgress((prev) => ({
       ...prev,
@@ -305,16 +328,16 @@ export default function App() {
       if (!prev.step || prev.step.phaseId !== phaseId || prev.step.stepIdx !== stepIdx) return prev;
       return { ...prev, step: resetTimer(prev.step, sec) };
     });
-  };
+  }, [updateProgress]);
 
-  const handleMarkStepDoneToday = (phaseId: number, stepIdx: number) => {
+  const handleMarkStepDoneToday = useCallback((phaseId: number, stepIdx: number) => {
     const key = `${phaseId}_${stepIdx}`;
     updateProgress((prev) => ({
       ...prev,
       stepDoneDay: { ...(prev.stepDoneDay ?? {}), [key]: getLocalDateString() }
     }));
     handleCancelStepTimer();
-  };
+  }, [updateProgress, handleCancelStepTimer]);
 
   // Persist device-local timers on every change.
   useEffect(() => {
@@ -384,9 +407,9 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSelectConcept = (concept: string) => {
+  const handleSelectConcept = useCallback((concept: string) => {
     setFilter({ section: 'ALL', searchQuery: concept });
-  };
+  }, []);
 
   // --- Plan management -----------------------------------------------------
 
@@ -678,36 +701,44 @@ export default function App() {
           </div>
         ) : (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
-            {filteredPhases.map((phase) => (
-              <PhaseCard
-                key={phase.id}
-                phase={phase}
-                progress={progress}
-                isOpen={openCardId === phase.id}
-                isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
-                stepTimerApi={{
-                  timer: timersBlob.step,
-                  nowMs,
-                  durations: stepDurations,
-                  doneDay: stepDoneDay,
-                  today: getLocalDateString(),
-                  start: handleStartStepTimer,
-                  pause: handlePauseStepTimer,
-                  resume: handleResumeStepTimer,
-                  cancel: handleCancelStepTimer,
-                  setDuration: handleSetStepDuration,
-                  markDoneToday: handleMarkStepDoneToday
-                }}
-                onToggleOpen={() =>
-                  setOpenCardId((prev) => (prev === phase.id ? null : phase.id))
-                }
-                onToggleCriteria={handleToggleCriteria}
-                onToggleStep={handleToggleStep}
-                onCompletePhase={handleToggleComplete}
-                onSaveNote={handleSaveNote}
-                onSelectConcept={handleSelectConcept}
-              />
-            ))}
+            {filteredPhases.map((phase) => {
+              // Only the card owning the active step timer needs the live clock.
+              // Everyone else gets a frozen value so React.memo can skip re-renders
+              // while the 1-second focus timer ticks.
+              const ownsStepTimer =
+                timersBlob.step !== null && timersBlob.step.phaseId === phase.id;
+              const stepTimerApi = ownsStepTimer
+                ? {
+                    timer: timersBlob.step,
+                    durations: stepDurations,
+                    doneDay: stepDoneDay,
+                    today: getLocalDateString(),
+                    start: handleStartStepTimer,
+                    pause: handlePauseStepTimer,
+                    resume: handleResumeStepTimer,
+                    cancel: handleCancelStepTimer,
+                    setDuration: handleSetStepDuration,
+                    markDoneToday: handleMarkStepDoneToday
+                  }
+                : undefined;
+              return (
+                <PhaseCard
+                  key={phase.id}
+                  phase={phase}
+                  progress={progress}
+                  isOpen={openCardId === phase.id}
+                  isActive={!!activePhase && activePhase.id === phase.id && !progress.completedPhases.includes(phase.id)}
+                  stepTimerApi={stepTimerApi}
+                  nowMs={ownsStepTimer ? nowMs : 0}
+                  onToggleOpen={() => handleToggleOpen(phase.id)}
+                  onToggleCriteria={handleToggleCriteria}
+                  onToggleStep={handleToggleStep}
+                  onCompletePhase={handleToggleComplete}
+                  onSaveNote={handleSaveNote}
+                  onSelectConcept={handleSelectConcept}
+                />
+              );
+            })}
           </div>
         )}
 
@@ -726,61 +757,63 @@ export default function App() {
         />
       )}
 
-      {showTimerModal && activePhase && (
-        <StudyTimerModal
-          activePhase={activePhase}
-          timer={timersBlob.focus}
-          nowMs={nowMs}
-          onSelectPreset={handleSelectFocusPreset}
-          onStart={handleStartFocus}
-          onPause={handlePauseFocus}
-          onReset={handleStopFocus}
-          onClose={() => setShowTimerModal(false)}
+      <Suspense fallback={null}>
+        {showTimerModal && activePhase && (
+          <StudyTimerModal
+            activePhase={activePhase}
+            timer={timersBlob.focus}
+            nowMs={nowMs}
+            onSelectPreset={handleSelectFocusPreset}
+            onStart={handleStartFocus}
+            onPause={handlePauseFocus}
+            onReset={handleStopFocus}
+            onClose={() => setShowTimerModal(false)}
+          />
+        )}
+
+        {showStatsModal && (
+          <StatsModal
+            appData={appData}
+            plan={activePlan}
+            progress={progress}
+            onClose={() => setShowStatsModal(false)}
+            onUpdateData={handleStateReload}
+          />
+        )}
+
+        {showCheatsheetModal && (
+          <GoCheatsheetModal
+            isOpen={showCheatsheetModal}
+            onClose={() => setShowCheatsheetModal(false)}
+          />
+        )}
+
+        <InstallGuideModal
+          isOpen={showInstallGuideModal}
+          onClose={() => setShowInstallGuideModal(false)}
+          canInstallPwa={!!deferredPrompt}
+          onTriggerPwaInstall={handleTriggerPwaInstall}
         />
-      )}
 
-      {showStatsModal && (
-        <StatsModal
-          appData={appData}
-          plan={activePlan}
-          progress={progress}
-          onClose={() => setShowStatsModal(false)}
-          onUpdateData={handleStateReload}
-        />
-      )}
+        {showAuthModal && (
+          <AuthModal onClose={() => setShowAuthModal(false)} />
+        )}
 
-      {showCheatsheetModal && (
-        <GoCheatsheetModal
-          isOpen={showCheatsheetModal}
-          onClose={() => setShowCheatsheetModal(false)}
-        />
-      )}
+        {pendingConflicts && pendingConflicts.length > 0 && (
+          <ConflictModal
+            conflicts={pendingConflicts}
+            onResolve={resolveConflicts}
+          />
+        )}
 
-      <InstallGuideModal
-        isOpen={showInstallGuideModal}
-        onClose={() => setShowInstallGuideModal(false)}
-        canInstallPwa={!!deferredPrompt}
-        onTriggerPwaInstall={handleTriggerPwaInstall}
-      />
-
-      {showAuthModal && (
-        <AuthModal onClose={() => setShowAuthModal(false)} />
-      )}
-
-      {pendingConflicts && pendingConflicts.length > 0 && (
-        <ConflictModal
-          conflicts={pendingConflicts}
-          onResolve={resolveConflicts}
-        />
-      )}
-
-      {editorState && (
-        <PlanEditorModal
-          plan={editorState.mode === 'edit' ? editorTarget : null}
-          onClose={() => setEditorState(null)}
-          onSave={handleSavePlan}
-        />
-      )}
+        {editorState && (
+          <PlanEditorModal
+            plan={editorState.mode === 'edit' ? editorTarget : null}
+            onClose={() => setEditorState(null)}
+            onSave={handleSavePlan}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
