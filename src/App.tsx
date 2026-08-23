@@ -80,7 +80,22 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Cross-device sync engine.
-  const { pendingConflicts, resolveConflicts, syncing, lastPushedAt } = useSync();
+  const { pendingConflicts, resolveConflicts, syncing, lastSyncedAt, pushNow, syncedData } = useSync();
+  // Honest sync status for the account menu indicator.
+  const syncStatus = { syncing, lastSyncedAt };
+  // Flush pending local changes to the cloud BEFORE the session is torn down
+  // — the sign-out effect can't push after the token is invalidated.
+  const handleBeforeSignOut = useCallback(async () => {
+    await pushNow();
+  }, [pushNow]);
+
+  // When the sync engine applies a cloud-merged state, surface it into the
+  // app's React state so the UI reflects the synced data without a reload.
+  useEffect(() => {
+    if (syncedData) {
+      setAppData(syncedData);
+    }
+  }, [syncedData]);
   // Plan editor: null = closed; 'new' = creating; planId string = editing that custom plan
   const [editorState, setEditorState] = useState<{ mode: 'new' } | { mode: 'edit'; planId: string } | null>(
     null
@@ -177,15 +192,18 @@ export default function App() {
   const handleUpdateData = useCallback((updater: (prev: AppData) => AppData) => {
     setAppData((prev) => {
       const next = updater(prev);
-      saveAppData(next);
+      // User action → bump the LWW timestamp so this device wins cross-device
+      // merge for LWW fields (settings / global / active plan).
+      saveAppData({ ...next, lastModifiedAt: Date.now() });
       return next;
     });
   }, []);
 
   // Direct state reload (for stats modal import/reset)
   const handleStateReload = useCallback((newState: AppData) => {
-    setAppData(newState);
-    saveAppData(newState);
+    // User-triggered import/reset → bump LWW timestamp too.
+    setAppData({ ...newState, lastModifiedAt: Date.now() });
+    saveAppData({ ...newState, lastModifiedAt: Date.now() });
   }, []);
 
   const handleUpdateSettings = useCallback((updater: (prev: AppSettings) => AppSettings) => {
@@ -623,6 +641,8 @@ export default function App() {
           onTriggerPwaInstall={handleTriggerPwaInstall}
           onOpenAuthModal={() => setShowAuthModal(true)}
           onOpenSettings={() => setShowSettingsModal(true)}
+          syncStatus={syncStatus}
+          onBeforeSignOut={handleBeforeSignOut}
         />
 
         {timersBlob.focus &&

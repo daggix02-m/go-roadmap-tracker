@@ -41,6 +41,38 @@
 import { AppData, PlanProgress, Plan, GlobalActivity } from '../types';
 
 // ---------------------------------------------------------------------------
+// Canonical serialization
+// ---------------------------------------------------------------------------
+
+/**
+ * Order-insensitive JSON serialization (object keys sorted recursively).
+ *
+ * The Convex backend re-serializes stored `v.any()` documents with sorted
+ * keys, so comparing `JSON.stringify(a) !== JSON.stringify(b)` against an
+ * echoed cloud snapshot is unstable (same data, different key order → always
+ * "different" → runaway re-push). This canonical form makes equality checks
+ * order-independent.
+ */
+export function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return '[' + value.map(canonicalJson).join(',') + ']';
+  }
+  if (value !== null && typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    const parts: string[] = [];
+    for (const k of keys) {
+      const v = (value as Record<string, unknown>)[k];
+      // Treat undefined-valued keys as absent: the Convex JSON round-trip
+      // drops them, so `{ a: undefined }` must compare equal to `{}`.
+      if (v === undefined) continue;
+      parts.push(JSON.stringify(k) + ':' + canonicalJson(v));
+    }
+    return '{' + parts.join(',') + '}';
+  }
+  return JSON.stringify(value);
+}
+
+// ---------------------------------------------------------------------------
 // Conflict record
 // ---------------------------------------------------------------------------
 
@@ -119,6 +151,48 @@ function recordLWW<V>(
   const out: Record<string, V> = { ...local };
   for (const [k, v] of Object.entries(remote)) {
     if (!(k in out) || v > out[k]) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Base-aware LWW for stepDurations.
+ *
+ * `recordLWW` compares raw values (higher number wins), which silently
+ * discards a user's deliberate change: shortening a timer from 3600s to
+ * 1200s on one device loses to the stale 3600s default on another device.
+ *
+ * Correct semantics: per key, the side that CHANGED since the common
+ * ancestor wins. Only when both sides changed (or there is no ancestor) do
+ * we fall back to the larger value as a deterministic tiebreak — and that
+ * genuine double-edit is separately surfaced as a plan-level conflict.
+ */
+function stepDurationLWW(
+  base: Record<string, number> | undefined,
+  local: Record<string, number>,
+  remote: Record<string, number>
+): Record<string, number> {
+  const b = base ?? {};
+  const out: Record<string, number> = { ...local };
+  for (const [k, rv] of Object.entries(remote)) {
+    const bv = b[k];
+    const lv = out[k];
+    if (lv === undefined) {
+      // Only the remote has this key — adopt it (a new override).
+      out[k] = rv;
+      continue;
+    }
+    const localChanged = bv !== undefined && bv !== lv;
+    const remoteChanged = bv !== undefined && bv !== rv;
+    if (remoteChanged && !localChanged) {
+      // Only the remote changed since base → remote wins.
+      out[k] = rv;
+    } else if (localChanged && remoteChanged) {
+      // Both changed → larger value as a tiebreak (plan-level conflict
+      // detection still surfaces this to the user).
+      if (rv > lv) out[k] = rv;
+    }
+    // else: only local changed (or neither) → keep local.
   }
   return out;
 }
@@ -280,6 +354,8 @@ function mergeProgress(
       continue;
     }
 
+    const bp = base?.progressByPlan?.[planId] ?? null;
+
     const merged: PlanProgress = {
       completedPhases: numberUnion(lp.completedPhases, rp.completedPhases),
       criteriaChecked: checkboxUnion(lp.criteriaChecked, rp.criteriaChecked),
@@ -289,11 +365,13 @@ function mergeProgress(
         (rp.lastStudiedPhaseId ?? 0) > (lp.lastStudiedPhaseId ?? 0)
           ? rp.lastStudiedPhaseId
           : lp.lastStudiedPhaseId,
-      stepDurations: recordLWW(lp.stepDurations ?? {}, rp.stepDurations ?? {}),
+      stepDurations: stepDurationLWW(
+        bp?.stepDurations ?? {},
+        lp.stepDurations ?? {},
+        rp.stepDurations ?? {}
+      ),
       stepDoneDay: recordLWW(lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {})
     };
-
-    const bp = base?.progressByPlan?.[planId] ?? null;
 
     // With a common ancestor, flag the plan only when both devices changed
     // the same thing since the last sync. Without one, flag any divergence

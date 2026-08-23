@@ -11,6 +11,12 @@ const ACCENT_BAR_CLASS: Record<AccentColor, string> = {
   danger: 'bg-danger'
 };
 
+/** Real sync status from useSync, shown in the account menu. */
+export interface SyncStatus {
+  syncing: boolean;
+  lastSyncedAt: number | null;
+}
+
 interface HeaderProps {
   plan: Plan;
   progress: ProgressSummary;
@@ -25,6 +31,9 @@ interface HeaderProps {
   onTriggerPwaInstall: () => void;
   onOpenAuthModal: () => void;
   onOpenSettings: () => void;
+  syncStatus?: SyncStatus;
+  /** Flush pending local changes before the auth session is torn down. */
+  onBeforeSignOut?: () => Promise<void>;
 }
 
 const iconButtonClass =
@@ -42,7 +51,9 @@ export const Header: React.FC<HeaderProps> = ({
   canInstallPwa,
   onTriggerPwaInstall,
   onOpenAuthModal,
-  onOpenSettings
+  onOpenSettings,
+  syncStatus,
+  onBeforeSignOut
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -205,7 +216,12 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             <div className="w-px h-5 bg-line ml-1" aria-hidden="true" />
-            <AccountButton onOpenAuthModal={onOpenAuthModal} onOpenSettings={onOpenSettings} />
+            <AccountButton
+              onOpenAuthModal={onOpenAuthModal}
+              onOpenSettings={onOpenSettings}
+              syncStatus={syncStatus}
+              onBeforeSignOut={onBeforeSignOut}
+            />
           </div>
         </div>
 

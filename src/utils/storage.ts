@@ -1,4 +1,4 @@
-import { AppData, GlobalActivity, PlanProgress } from '../types';
+import { AppData, AppSettings, GlobalActivity, PlanProgress } from '../types';
 
 /** Legacy single-plan key — kept as the read-only migration source. */
 const LEGACY_STORAGE_KEY = 'go_backend_roadmap_tracker_v1';
@@ -15,6 +15,30 @@ export function getLocalDateString(d: Date = new Date()): string {
 // ---------------------------------------------------------------------------
 
 const STORAGE_KEY_V2 = 'plan_tracker_v2';
+
+/**
+ * Save-change notification (tiny pub/sub).
+ *
+ * The sync engine subscribes so it can push to the cloud shortly after a user
+ * action — without this, changes only reached the cloud on the 5-minute
+ * interval or sign-out (whose push fails after the token is invalidated).
+ * Sync-internal saves (the merged result being persisted) pass `{silent:
+ * true}` so they don't trigger a redundant push.
+ */
+type SaveListener = () => void;
+const saveListeners: SaveListener[] = [];
+
+export function onAppDataSaved(listener: SaveListener): () => void {
+  saveListeners.push(listener);
+  return () => {
+    const i = saveListeners.indexOf(listener);
+    if (i >= 0) saveListeners.splice(i, 1);
+  };
+}
+
+function notifyAppDataSaved(): void {
+  for (const l of saveListeners) l();
+}
 
 export const EMPTY_PLAN_PROGRESS: PlanProgress = {
   completedPhases: [],
@@ -65,25 +89,30 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
   const base = defaultAppData();
   if (!parsed || typeof parsed !== 'object') return base;
 
-  const settings = { ...base.settings };
-  if (parsed.settings && typeof parsed.settings === 'object') {
-    settings.dailyReminderEnabled = Boolean(parsed.settings.dailyReminderEnabled);
-    if (typeof parsed.settings.dailyReminderTime === 'string') {
-      settings.dailyReminderTime = parsed.settings.dailyReminderTime;
-    }
-    if (parsed.settings.timeFormat === '12h' || parsed.settings.timeFormat === '24h') {
-      settings.timeFormat = parsed.settings.timeFormat;
-    }
-    if (typeof parsed.settings.timezone === 'string' && parsed.settings.timezone.length > 0) {
-      settings.timezone = parsed.settings.timezone;
-    }
-    if (
-      typeof parsed.settings.dailyFocusGoal === 'number' &&
-      Number.isFinite(parsed.settings.dailyFocusGoal) &&
-      parsed.settings.dailyFocusGoal > 0
-    ) {
-      settings.dailyFocusGoal = Math.round(parsed.settings.dailyFocusGoal);
-    }
+  const settings: AppSettings = {
+    dailyReminderEnabled: Boolean(parsed.settings?.dailyReminderEnabled),
+    dailyReminderTime:
+      typeof parsed.settings?.dailyReminderTime === 'string'
+        ? parsed.settings.dailyReminderTime
+        : base.settings.dailyReminderTime,
+    timeFormat:
+      parsed.settings?.timeFormat === '12h' || parsed.settings?.timeFormat === '24h'
+        ? parsed.settings.timeFormat
+        : base.settings.timeFormat
+  };
+  // Only materialize optional keys when they have a real value — the Convex
+  // JSON round-trip drops undefined-valued keys, so storing `timezone:
+  // undefined` made local settings permanently differ from the echoed cloud
+  // snapshot (the sync-echo bug).
+  if (typeof parsed.settings?.timezone === 'string' && parsed.settings.timezone.length > 0) {
+    settings.timezone = parsed.settings.timezone;
+  }
+  if (
+    typeof parsed.settings?.dailyFocusGoal === 'number' &&
+    Number.isFinite(parsed.settings.dailyFocusGoal) &&
+    parsed.settings.dailyFocusGoal > 0
+  ) {
+    settings.dailyFocusGoal = Math.round(parsed.settings.dailyFocusGoal);
   }
 
   const global = { ...base.global };
@@ -126,10 +155,14 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
   return {
     version: 2,
     activePlanId: typeof parsed.activePlanId === 'string' ? parsed.activePlanId : base.activePlanId,
+    activePlanUpdatedAt:
+      typeof parsed.activePlanUpdatedAt === 'number' ? parsed.activePlanUpdatedAt : undefined,
     customPlans: Array.isArray(parsed.customPlans) ? parsed.customPlans : [],
     settings,
     global,
-    progressByPlan
+    progressByPlan,
+    lastModifiedAt:
+      typeof parsed.lastModifiedAt === 'number' ? parsed.lastModifiedAt : undefined
   };
 }
 
@@ -215,14 +248,15 @@ export function calculateGlobalStreak(global: GlobalActivity): GlobalActivity {
   };
 }
 
-export function saveAppData(data: AppData): void {
+export function saveAppData(data: AppData, opts?: { silent?: boolean }): void {
   try {
-    // Bump the LWW timestamp so the last-writing device wins for global/settings
-    // fields during cross-device merge (see utils/merge.ts).
-    localStorage.setItem(
-      STORAGE_KEY_V2,
-      JSON.stringify({ ...data, lastModifiedAt: Date.now() })
-    );
+    // NOTE: deliberately does NOT bump `lastModifiedAt` here. The sync engine
+    // saves the merged state as-is and pushes it as-is, so local, cloud and
+    // the merge base stay identical — otherwise the auto-sync echo re-pushes
+    // forever. User actions bump the timestamp explicitly at the call sites
+    // (App.tsx handleUpdateData / handleStateReload, logStudyActivity).
+    localStorage.setItem(STORAGE_KEY_V2, JSON.stringify(data));
+    if (!opts?.silent) notifyAppDataSaved();
   } catch (err) {
     console.error('Failed to save app data:', err);
   }
@@ -265,6 +299,7 @@ export function logStudyActivity(
   const todayStr = getLocalDateString();
   const next: AppData = {
     ...data,
+    lastModifiedAt: Date.now(),
     global: calculateGlobalStreak({
       ...data.global,
       totalStudyMinutes: (data.global.totalStudyMinutes || 0) + minutes,

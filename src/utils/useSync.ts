@@ -11,18 +11,21 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { threeWayMerge, Conflict } from './merge';
+import { threeWayMerge, canonicalJson, Conflict } from './merge';
 import { AppData } from '../types';
-import { loadAppData, saveAppData } from './storage';
+import { loadAppData, saveAppData, onAppDataSaved } from './storage';
 import { getDeviceLabel } from './device';
 
-const PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const PUSH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — safety net
+const PUSH_DEBOUNCE_MS = 2500; // push shortly after the last user action
 
 export interface SyncState {
   /** True while a pull/merge/push cycle is in progress. */
   syncing: boolean;
   /** Timestamp of the last successful push to cloud (epoch ms). */
   lastPushedAt: number | null;
+  /** Timestamp of the last completed sync cycle (pull+merge or push). */
+  lastSyncedAt: number | null;
   /** Conflicts from the last merge that need user resolution. */
   pendingConflicts: Conflict[] | null;
   /** Resolved merged data waiting for user decision (null = none). */
@@ -31,6 +34,8 @@ export interface SyncState {
   pendingLocal: AppData | null;
   /** Remote snapshot that was diverged (for "keep both" fork). */
   pendingRemote: AppData | null;
+  /** The most recent state applied to localStorage by the sync engine. */
+  syncedData: AppData | null;
 }
 
 export interface SyncActions {
@@ -46,15 +51,26 @@ const DEVICE_LABEL = getDeviceLabel();
 
 export function useSync(): SyncState & SyncActions {
   const { isAuthenticated } = useConvexAuth();
-  const cloudSnapshot = useQuery(api.snapshots.get);
+  // Skip the query while signed out: `snapshots.get` returns null for an
+  // anonymous request, which used to be mistaken for "account has no data".
+  // That race let a fresh device push its empty state over the account's
+  // cloud snapshot on sign-in. Skipping keeps `cloudSnapshot` at `undefined`
+  // (loading) until the authenticated query resolves, so the only null the
+  // sync engine ever sees is a confirmed "no snapshot" answer.
+  const cloudSnapshot = useQuery(api.snapshots.get, isAuthenticated ? undefined : 'skip');
   const pushSnapshot = useMutation(api.snapshots.put);
 
   const [syncing, setSyncing] = useState(false);
   const [lastPushedAt, setLastPushedAt] = useState<number | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [pendingConflicts, setPendingConflicts] = useState<Conflict[] | null>(null);
   const [pendingMerged, setPendingMerged] = useState<AppData | null>(null);
   const [pendingLocal, setPendingLocal] = useState<AppData | null>(null);
   const [pendingRemote, setPendingRemote] = useState<AppData | null>(null);
+  // The latest state the sync engine applied locally. App subscribes to this
+  // so the UI reflects cloud-merged data after sign-in / background sync —
+  // otherwise the React state stays stale until a manual reload.
+  const [syncedData, setSyncedData] = useState<AppData | null>(null);
 
   // Reference to avoid stale closures in the background interval.
   const localRef = useRef<AppData>(loadAppData());
@@ -69,10 +85,13 @@ export function useSync(): SyncState & SyncActions {
   // tab — one of the triggers for OptimisticConcurrencyControlFailure.
   const pushQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  /** Push the given data (or current local) to Convex. */
-  const pushNow = useCallback(
+  /**
+   * Push the given data (or current local) to Convex. No auth guard — this is
+   * the primitive used by both `pushNow` (guarded) and the sign-out flush,
+   * which must run *after* isAuthenticated flips to false.
+   */
+  const pushInternal = useCallback(
     async (data?: AppData) => {
-      if (!isAuthenticated) return;
       const run = async () => {
         const toPush = data ?? loadAppData();
         const now = Date.now();
@@ -86,6 +105,7 @@ export function useSync(): SyncState & SyncActions {
               deviceLabel: DEVICE_LABEL
             });
             setLastPushedAt(now);
+            setLastSyncedAt(now);
             return;
           } catch (err) {
             const isOcc =
@@ -101,7 +121,16 @@ export function useSync(): SyncState & SyncActions {
       pushQueueRef.current = next.catch(() => {});
       return next;
     },
-    [isAuthenticated, pushSnapshot]
+    [pushSnapshot]
+  );
+
+  /** Push the given data (or current local) to Convex. */
+  const pushNow = useCallback(
+    async (data?: AppData) => {
+      if (!isAuthenticated) return;
+      return pushInternal(data);
+    },
+    [isAuthenticated, pushInternal]
   );
 
   /** Full sync cycle: pull → merge → push. */
@@ -118,6 +147,7 @@ export function useSync(): SyncState & SyncActions {
       // No cloud data yet — just push local.
       if (!remote) {
         localStorage.setItem('plan_tracker_last_synced', JSON.stringify(local));
+        setSyncedData(local);
         await pushNow(local);
         return;
       }
@@ -131,18 +161,19 @@ export function useSync(): SyncState & SyncActions {
 
       if (conflicts.length === 0) {
         // Auto-resolved — adopt the merged state locally and use it as the
-        // base for future merges.
-        saveAppData(merged);
+        // base for future merges. Silent save: this is a sync-internal write,
+        // not a user action, so it must not trigger the debounced re-push.
+        saveAppData(merged, { silent: true });
         localStorage.setItem('plan_tracker_last_synced', JSON.stringify(merged));
         // Only push back if the cloud doesn't already have this state.
-        // Pushing unconditionally made the cloudSnapshot → re-sync → push
-        // cycle loop forever: every push bumps `updatedAt`, which re-fires
-        // the auto-sync effect, which pushes again — a runaway echo that
-        // also kept the read-then-write `snapshots.put` colliding with
-        // itself across tabs/devices (OptimisticConcurrencyControlFailure).
-        if (JSON.stringify(merged) !== JSON.stringify(remoteData)) {
+        // Note the comparison is canonical (key-sorted): Convex re-serializes
+        // stored documents with sorted object keys, so a raw JSON.stringify
+        // comparison against the echoed snapshot never settles and re-pushes
+        // forever (~every 500ms, the runaway echo).
+        if (canonicalJson(merged) !== canonicalJson(remoteData)) {
           await pushNow(merged);
         }
+        setSyncedData(merged);
       } else {
         // Conflicts need user decision — pause sync, show modal.
         setPendingConflicts(conflicts);
@@ -153,6 +184,8 @@ export function useSync(): SyncState & SyncActions {
     } finally {
       syncingRef.current = false;
       setSyncing(false);
+      // A completed cycle (pull+merge or first push) means the data is synced.
+      setLastSyncedAt(Date.now());
     }
   }, [isAuthenticated, cloudSnapshot, pushNow, pendingConflicts]);
 
@@ -191,8 +224,9 @@ export function useSync(): SyncState & SyncActions {
         }
       }
 
-      saveAppData(final);
+      saveAppData(final, { silent: true });
       localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
+      setSyncedData(final);
       // Push the resolved state and only clear the conflict once the cloud
       // actually has it — otherwise the auto-sync can re-detect the same
       // conflict against a stale snapshot (modal reappears and gets stuck).
@@ -228,7 +262,7 @@ export function useSync(): SyncState & SyncActions {
     syncNowRef.current();
   }, [isAuthenticated, cloudSnapshot]);
 
-  // Background push every PUSH_INTERVAL_MS.
+  // Background push every PUSH_INTERVAL_MS (safety net).
   useEffect(() => {
     if (!isAuthenticated) return;
     const id = setInterval(() => {
@@ -237,21 +271,38 @@ export function useSync(): SyncState & SyncActions {
     return () => clearInterval(id);
   }, [isAuthenticated, pendingConflicts, pushNow]);
 
-  // Push on sign-out (before the ConvexAuthProvider clears state).
+  // Debounced push after a user action. `saveAppData` notifies us on every
+  // non-silent save (App.tsx / logStudyActivity); we push a short moment
+  // after the last change so the account snapshot stays fresh without the
+  // runaway echo. This also makes the old sign-out push unnecessary — the
+  // final state is already in the cloud before the token is invalidated.
+  const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const schedulePush = useCallback(() => {
+    if (!isAuthenticated || pendingConflicts) return;
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(() => {
+      pushTimerRef.current = null;
+      pushNow();
+    }, PUSH_DEBOUNCE_MS);
+  }, [isAuthenticated, pendingConflicts, pushNow]);
+
   useEffect(() => {
-    if (isAuthenticated) return;
-    // Component unmounts or auth state flips to false — push final snapshot.
-    const local = loadAppData();
-    pushNow(local).catch(() => {});
-  }, [isAuthenticated, pushNow]);
+    const off = onAppDataSaved(schedulePush);
+    return () => {
+      off();
+      if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    };
+  }, [schedulePush]);
 
   return {
     syncing,
     lastPushedAt,
+    lastSyncedAt,
     pendingConflicts,
     pendingMerged,
     pendingLocal,
     pendingRemote,
+    syncedData,
     syncNow,
     pushNow,
     resolveConflicts

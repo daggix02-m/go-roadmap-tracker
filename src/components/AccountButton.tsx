@@ -1,13 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { User, LogOut, Settings, RefreshCw, Check, ExternalLink } from 'lucide-react';
+import { User, LogOut, Settings, RefreshCw, Check, ExternalLink, CloudOff } from 'lucide-react';
 import { useConvexAuth, useAuthActions } from '@convex-dev/auth/react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { SyncStatus } from './Header';
 
 interface AccountButtonProps {
   onOpenAuthModal: () => void;
   onOpenSettings: () => void;
+  syncStatus?: SyncStatus;
+  /** Flush pending local changes before the auth session is torn down. */
+  onBeforeSignOut?: () => Promise<void>;
 }
+
+const SYNCED_WINDOW_MS = 6 * 60 * 1000; // "Synced" while last push was within the 5-min push cadence
 
 function getInitials(email: string): string {
   const [local] = email.split('@');
@@ -22,7 +28,7 @@ function getNameInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, onOpenSettings }) => {
+export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, onOpenSettings, syncStatus, onBeforeSignOut }) => {
   const { isAuthenticated, isLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
   const viewer = useQuery(api.auth.viewer);
@@ -61,9 +67,39 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, o
   }, [open]);
 
   const handleSignOut = async () => {
+    // Flush local changes to the cloud first — the token is still valid here,
+    // unlike in the post-sign-out effect.
+    try {
+      await onBeforeSignOut?.();
+    } catch {
+      // Best-effort flush; sign out regardless.
+    }
     await signOut();
     setOpen(false);
   };
+
+  // Honest sync status: syncing now → spinner; recent successful sync cycle
+  // → "Synced"; otherwise (never synced / stale) → "Not synced".
+  const syncedRecently =
+    !!syncStatus?.lastSyncedAt &&
+    Date.now() - syncStatus.lastSyncedAt < SYNCED_WINDOW_MS;
+
+  const statusNode = syncStatus?.syncing ? (
+    <div className="flex items-center gap-1.5 mt-1">
+      <RefreshCw className="w-3 h-3 text-muted animate-spin" />
+      <span className="text-[11px] text-faint font-mono">Syncing…</span>
+    </div>
+  ) : syncedRecently ? (
+    <div className="flex items-center gap-1.5 mt-1">
+      <Check className="w-3 h-3 text-success" />
+      <span className="text-[11px] text-faint font-mono">Synced</span>
+    </div>
+  ) : (
+    <div className="flex items-center gap-1.5 mt-1">
+      <CloudOff className="w-3 h-3 text-warning" />
+      <span className="text-[11px] text-faint font-mono">Not synced</span>
+    </div>
+  );
 
   // Loading skeleton.
   if (isLoading) {
@@ -123,10 +159,7 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, o
           <div className="px-3 py-2 border-b border-line">
             <p className="text-xs font-medium text-text truncate">{name || email || 'Signed in'}</p>
             {name && <p className="text-[11px] text-faint truncate mt-0.5">{email}</p>}
-            <div className="flex items-center gap-1.5 mt-1">
-              <Check className="w-3 h-3 text-success" />
-              <span className="text-[11px] text-faint font-mono">Synced</span>
-            </div>
+            {statusNode}
           </div>
 
           {/* Actions */}
