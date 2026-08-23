@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, BellOff, Check, Clock, Send, X } from 'lucide-react';
+import { Bell, BellOff, Check, Clock, Send } from 'lucide-react';
 import { AppSettings, Phase } from '../types';
 import { REMINDER_TIME_OPTIONS, formatTime } from '../utils/time';
 import {
@@ -28,7 +28,6 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   planName,
   onUpdateSettings
 }) => {
-  const [isDismissed, setIsDismissed] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testSuccess, setTestSuccess] = useState(false);
   const [permission, setPermission] = useState<NotificationPermission>(() => {
@@ -39,10 +38,6 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   });
 
   const supported = isNotificationSupported();
-
-  if (isDismissed) {
-    return null;
-  }
 
   const handleEnableNotification = async () => {
     if (!supported) {
@@ -153,7 +148,6 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
               </div>
 
               <button
-                id="test-notification-btn"
                 onClick={handleTestNotification}
                 disabled={isTesting}
                 className="px-2.5 py-1.5 rounded-md border border-line hover:border-line-strong hover:bg-hover text-muted hover:text-text text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
@@ -178,14 +172,6 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
               Enable reminders
             </button>
           )}
-
-          <button
-            onClick={() => setIsDismissed(true)}
-            aria-label="Dismiss banner"
-            className="p-1.5 text-faint hover:text-text rounded-md transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </div>
