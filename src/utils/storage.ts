@@ -36,7 +36,7 @@ function defaultAppData(): AppData {
     activePlanId: 'go-roadmap',
     customPlans: [],
     settings: { dailyReminderEnabled: false, dailyReminderTime: '09:00', timeFormat: '12h' },
-    global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0 },
+    global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0, historyMinutes: {} },
     progressByPlan: {}
   };
 }
@@ -79,6 +79,15 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
     if (Array.isArray(parsed.global.historyDates)) global.historyDates = parsed.global.historyDates;
     if (typeof parsed.global.totalStudyMinutes === 'number') {
       global.totalStudyMinutes = parsed.global.totalStudyMinutes;
+    }
+    if (parsed.global.historyMinutes !== undefined) {
+      global.historyMinutes = sanitizeRecord<number>(
+        parsed.global.historyMinutes,
+        (v) => typeof v === 'number' && v > 0
+      );
+    } else if (global.historyDates.length > 0) {
+      // Pre-graph data: backfill each studied day at the lowest intensity.
+      global.historyMinutes = Object.fromEntries(global.historyDates.map((d) => [d, 15]));
     }
   }
 
@@ -130,7 +139,8 @@ function migrateLegacyState(): AppData | null {
         streak: typeof old.streak === 'number' ? old.streak : 0,
         lastActiveDate: (old.lastActiveDate as string) ?? null,
         historyDates: Array.isArray(old.historyDates) ? old.historyDates : [],
-        totalStudyMinutes: typeof old.totalStudyMinutes === 'number' ? old.totalStudyMinutes : 0
+        totalStudyMinutes: typeof old.totalStudyMinutes === 'number' ? old.totalStudyMinutes : 0,
+        historyMinutes: {}
       },
       progressByPlan: {
         'go-roadmap': {
@@ -231,11 +241,16 @@ export function logStudyActivity(
   minutes = 15
 ): AppData {
   const prev = data.progressByPlan[planId] ?? emptyPlanProgress();
+  const todayStr = getLocalDateString();
   const next: AppData = {
     ...data,
     global: calculateGlobalStreak({
       ...data.global,
-      totalStudyMinutes: (data.global.totalStudyMinutes || 0) + minutes
+      totalStudyMinutes: (data.global.totalStudyMinutes || 0) + minutes,
+      historyMinutes: {
+        ...(data.global.historyMinutes ?? {}),
+        [todayStr]: (data.global.historyMinutes?.[todayStr] ?? 0) + minutes
+      }
     }),
     progressByPlan: {
       ...data.progressByPlan,

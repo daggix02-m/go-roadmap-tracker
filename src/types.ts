@@ -71,6 +71,8 @@ export interface GlobalActivity {
   lastActiveDate: string | null;
   historyDates: string[];
   totalStudyMinutes: number;
+  /** Minutes studied per local day ('YYYY-MM-DD') — drives the contribution graph. */
+  historyMinutes: Record<string, number>;
 }
 
 /** Root persisted state (storage key version 2). */

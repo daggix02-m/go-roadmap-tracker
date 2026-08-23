@@ -40,7 +40,7 @@ import {
 } from './utils/timerEngine';
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { PlanEditorModal } from './components/PlanEditorModal';
-import { WidgetDashboard } from './components/WidgetDashboard';
+import { ContributionGraph } from './components/ContributionGraph';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 
 export default function App() {
@@ -625,14 +625,7 @@ export default function App() {
 
       <main className="max-w-3xl mx-auto px-4 pt-4 space-y-3">
         {/* Widget-style overview */}
-        <WidgetDashboard
-          accent={activePlan.accent}
-          progress={progressSummary}
-          streak={appData.global.streak}
-          activePhase={activePhase}
-          totalStudyMinutes={appData.global.totalStudyMinutes}
-          onJumpToActive={handleJumpToActive}
-        />
+        <ContributionGraph historyMinutes={appData.global.historyMinutes} />
 
         {/* Intro: the method */}
         {activePlan.method &&

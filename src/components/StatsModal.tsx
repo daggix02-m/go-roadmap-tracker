@@ -107,7 +107,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
         activePlanId: 'go-roadmap',
         customPlans: [],
         settings: appData.settings,
-        global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0 },
+        global: { streak: 0, lastActiveDate: null, historyDates: [], totalStudyMinutes: 0, historyMinutes: {} },
         progressByPlan: {}
       });
       saveAppData(resetState);
