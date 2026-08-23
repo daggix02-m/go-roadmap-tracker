@@ -2,6 +2,7 @@ import React from 'react';
 import { Timer, TerminalSquare, BarChart3, Download, Flame } from 'lucide-react';
 import { AccentColor, Plan } from '../types';
 import { ProgressSummary } from '../data/progress';
+import { AccountButton } from './AccountButton';
 
 const ACCENT_BAR_CLASS: Record<AccentColor, string> = {
   accent: 'bg-accent',
@@ -22,6 +23,7 @@ interface HeaderProps {
   onOpenInstallGuide: () => void;
   canInstallPwa: boolean;
   onTriggerPwaInstall: () => void;
+  onOpenAuthModal: () => void;
 }
 
 const iconButtonClass =
@@ -37,7 +39,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenCheatsheet,
   onOpenInstallGuide,
   canInstallPwa,
-  onTriggerPwaInstall
+  onTriggerPwaInstall,
+  onOpenAuthModal
 }) => {
   return (
     <header className="bg-page/90 backdrop-blur-md border-b border-line">
@@ -112,6 +115,9 @@ export const Header: React.FC<HeaderProps> = ({
                 <Download className="w-4 h-4" />
               </button>
             )}
+
+            <div className="w-px h-5 bg-line ml-1" aria-hidden="true" />
+            <AccountButton onOpenAuthModal={onOpenAuthModal} />
           </div>
         </div>
 

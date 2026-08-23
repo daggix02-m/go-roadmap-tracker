@@ -42,6 +42,7 @@ import { PlanSwitcher } from './components/PlanSwitcher';
 import { PlanEditorModal } from './components/PlanEditorModal';
 import { ContributionGraph } from './components/ContributionGraph';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
+import { AuthModal } from './components/AuthModal';
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -53,6 +54,7 @@ export default function App() {
   const [showTimerModal, setShowTimerModal] = useState(false);
   const [showCheatsheetModal, setShowCheatsheetModal] = useState(false);
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
   // Plan editor: null = closed; 'new' = creating; planId string = editing that custom plan
   const [editorState, setEditorState] = useState<{ mode: 'new' } | { mode: 'edit'; planId: string } | null>(
     null
@@ -557,6 +559,7 @@ export default function App() {
           onOpenInstallGuide={() => setShowInstallGuideModal(true)}
           canInstallPwa={!!deferredPrompt}
           onTriggerPwaInstall={handleTriggerPwaInstall}
+          onOpenAuthModal={() => setShowAuthModal(true)}
         />
 
         {timersBlob.focus &&
@@ -753,6 +756,10 @@ export default function App() {
         canInstallPwa={!!deferredPrompt}
         onTriggerPwaInstall={handleTriggerPwaInstall}
       />
+
+      {showAuthModal && (
+        <AuthModal onClose={() => setShowAuthModal(false)} />
+      )}
 
       {editorState && (
         <PlanEditorModal
