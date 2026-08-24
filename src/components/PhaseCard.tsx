@@ -217,7 +217,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                     key={c}
                     onClick={() => onSelectConcept(c)}
                     title={`Search for "${c}"`}
-                    className="px-2 py-1 rounded-md border border-line bg-raised text-muted hover:text-text hover:border-line-strong font-mono text-xs transition-colors cursor-pointer"
+                    className="px-2.5 py-1.5 rounded-md border border-line bg-raised text-muted hover:text-text hover:border-line-strong font-mono text-xs transition-colors cursor-pointer"
                   >
                     {c}
                   </button>
@@ -295,7 +295,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                                   <button
                                     onClick={isRunning(ownTimer) ? stepTimerApi.pause : stepTimerApi.resume}
                                     aria-label={isRunning(ownTimer) ? 'Pause step timer' : 'Resume step timer'}
-                                    className="p-1 rounded text-muted hover:text-text hover:bg-raised transition-colors cursor-pointer"
+                                    className="min-h-9 min-w-9 flex items-center justify-center rounded text-muted hover:text-text hover:bg-raised transition-colors cursor-pointer"
                                   >
                                     {isRunning(ownTimer) ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                                   </button>
@@ -307,7 +307,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                                   onClick={() => stepTimerApi.start(phase.id, idx)}
                                   title={`Start ${formatCountdown(effectiveDuration)} countdown`}
                                   aria-label={`Start ${formatCountdown(effectiveDuration)} countdown for this step`}
-                                  className="flex items-center gap-1 px-1.5 py-1 rounded border border-line font-mono text-[11px] text-faint hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
+                                  className="flex items-center gap-1 px-2 py-1.5 rounded border border-line font-mono text-[11px] text-faint hover:text-accent hover:border-accent/40 transition-colors cursor-pointer"
                                 >
                                   <Play className="w-3 h-3" />
                                   {formatCountdown(effectiveDuration).replace(/:00$/, '')}
@@ -318,7 +318,7 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                                   }
                                   aria-label="Change step duration"
                                   aria-expanded={openDurationKey === key}
-                                  className="p-1 rounded text-faint hover:text-text transition-colors cursor-pointer"
+                                  className="min-h-9 min-w-9 flex items-center justify-center rounded text-faint hover:text-text transition-colors cursor-pointer"
                                 >
                                   <ChevronDown className="w-3 h-3" />
                                 </button>
@@ -364,21 +364,21 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                           <span className="flex-1" />
                           <button
                             onClick={() => stepTimerApi.markDoneToday(phase.id, idx)}
-                            className="px-2.5 py-1 rounded-md bg-success text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
+                            className="px-3 py-2 rounded-md bg-success text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
                           >
                             Yes, mark done
                           </button>
                           <button
                             onClick={() => stepTimerApi.start(phase.id, idx)}
                             title="Restart the countdown for this step"
-                            className="p-1.5 rounded-md border border-line text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+                            className="min-h-10 min-w-10 flex items-center justify-center rounded-md border border-line text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
                             aria-label="Restart countdown"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={stepTimerApi.cancel}
-                            className="px-2 py-1 rounded-md border border-line text-muted hover:text-text hover:bg-hover text-xs font-medium transition-colors cursor-pointer"
+                            className="px-3 py-2 rounded-md border border-line text-muted hover:text-text hover:bg-hover text-xs font-medium transition-colors cursor-pointer"
                           >
                             Not yet
                           </button>

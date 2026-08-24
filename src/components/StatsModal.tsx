@@ -3,6 +3,7 @@ import { Download, RotateCcw, Upload, X } from 'lucide-react';
 import { AppData, Plan, PlanProgress } from '../types';
 import { getActivityHistory, formatStudyMinutes, getProgressSummary } from '../data/progress';
 import { exportAppDataAsJSON, getLocalDateString, normalizeAppData, saveAppData } from '../utils/storage';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface StatsModalProps {
   appData: AppData;
@@ -21,6 +22,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onClose,
   onUpdateData
 }) => {
+  useScrollLock(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const summary = getProgressSummary(plan, progress);
@@ -128,7 +130,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Progress stats"
-        className="w-full max-w-lg bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button

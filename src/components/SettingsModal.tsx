@@ -19,6 +19,7 @@ import { api } from '../../convex/_generated/api';
 import { AppData, AppSettings, HomeWidgetId, Plan } from '../types';
 import { exportAppDataAsJSON } from '../utils/storage';
 import { authErrorMessage } from '../utils/authErrors';
+import { useScrollLock } from '../utils/scrollLock';
 import { THEMES } from '../utils/themes';
 import { WIDGET_META, WIDGET_ORDER } from './HomeWidgets/WidgetSwitcher';
 
@@ -101,6 +102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onImportAppData,
   onImportPlans
 }) => {
+  useScrollLock(true);
   const [showImport, setShowImport] = useState(false);
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -315,7 +317,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Account settings"
-        className="w-full max-w-lg bg-surface border border-line rounded-xl relative max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-surface border border-line rounded-xl relative max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

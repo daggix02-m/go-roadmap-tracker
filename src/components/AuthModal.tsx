@@ -3,6 +3,7 @@ import { X, Mail, Lock, User, Loader2, AlertCircle } from 'lucide-react';
 import { useAuthActions } from '@convex-dev/auth/react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { authErrorMessage } from '../utils/authErrors';
+import { useScrollLock } from '../utils/scrollLock';
 
 type Mode = 'signIn' | 'signUp';
 
@@ -11,6 +12,7 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
+  useScrollLock(true);
   const { signIn } = useAuthActions();
   const [mode, setMode] = useState<Mode>('signIn');
   const [name, setName] = useState('');

@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { AccentColor, Phase, Plan } from '../types';
 import { exportPlanAsJSON } from '../utils/plans';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface PlanEditorModalProps {
   /** Plan being edited, or null when creating a new one. */
@@ -101,6 +102,7 @@ function commitPhase(d: PhaseDraft): Phase {
 }
 
 export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose, onSave }) => {
+  useScrollLock(true);
   const isNew = plan === null;
 
   const [name, setName] = useState(plan?.name ?? '');
@@ -196,7 +198,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
         role="dialog"
         aria-modal="true"
         aria-label={isNew ? 'Create plan' : 'Edit plan'}
-        className="w-full max-w-lg bg-surface border border-line rounded-xl relative max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-surface border border-line rounded-xl relative max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

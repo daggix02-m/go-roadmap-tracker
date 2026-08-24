@@ -19,6 +19,8 @@ const SVG = path.join(ROOT, 'public', 'icon.svg');
 const TARGETS = [
   { file: 'icon-192.png', size: 192, purpose: 'any' },
   { file: 'icon-512.png', size: 512, purpose: 'any' },
+  // Apple's preferred home-screen icon size (apple-touch-icon).
+  { file: 'icon-180.png', size: 180, purpose: 'any' },
   // Maskable icons get trimmed by the platform into arbitrary shapes —
   // render the full-bleed artwork at 80% inside a padded square.
   { file: 'icon-maskable-192.png', size: 192, scale: 0.8, purpose: 'maskable' },

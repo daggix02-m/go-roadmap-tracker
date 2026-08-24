@@ -48,7 +48,7 @@
 
   --t-text: #ededed;
   --t-muted: #8f8f8f;
-  --t-faint: #666666;
+  --t-faint: #767676;
 
   --t-accent: #3291ff;
   --t-accent-strong: #0070f3;
@@ -73,7 +73,7 @@
 
   --t-text: #1b1b1f;
   --t-muted: #71717a;
-  --t-faint: #75757e;
+  --t-faint: #a1a1aa;
 
   --t-accent: #0069db;
   --t-accent-strong: #005bbd;
@@ -98,7 +98,7 @@
 
   --t-text: #eceff4;
   --t-muted: #aeb8c9;
-  --t-faint: #7f889b;
+  --t-faint: #949db0;
 
   --t-accent: #88c0d0;
   --t-accent-strong: #64aec3;
@@ -123,7 +123,7 @@
 
   --t-text: #f8f8f2;
   --t-muted: #a4a8bf;
-  --t-faint: #74779a;
+  --t-faint: #8a8da8;
 
   --t-accent: #bd93f9;
   --t-accent-strong: #a685ea;
@@ -194,6 +194,24 @@ input[type='checkbox'] {
 /* Safe-area padding for fixed bars on notched phones */
 .safe-bottom {
   padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+}
+
+/* Top safe-area inset for sticky headers in standalone PWA mode
+   (viewport-fit=cover draws content behind the status bar/notch). */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Content clearance so the last card clears the fixed bottom bar plus the
+   home-indicator inset, instead of a fixed 6rem guess. */
+.page-bottom-clearance {
+  padding-bottom: calc(6rem + env(safe-area-inset-bottom));
+}
+
+/* Modal scroll containers must not chain-scroll into the page behind them
+   (or trigger iOS pull-to-refresh) when they reach their end. */
+[role='dialog'] {
+  overscroll-behavior: contain;
 }
 
 /* Modal scrims follow the theme's scrim token */

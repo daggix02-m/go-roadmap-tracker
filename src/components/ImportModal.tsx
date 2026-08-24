@@ -10,6 +10,7 @@ import {
   parseImportedJson
 } from '../utils/importers';
 import { Plan, AppData } from '../types';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface ImportModalProps {
   onImportAppData: (data: Partial<AppData>) => void;
@@ -34,6 +35,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   onImportPlans,
   onClose
 }) => {
+  useScrollLock(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -183,7 +185,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Import data"
-        className="w-full max-w-md bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90vh] overflow-y-auto animate-slide-up"
+        className="w-full max-w-md bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90dvh] overflow-y-auto animate-slide-up"
         onClick={(e) => e.stopPropagation()}
       >
         <button

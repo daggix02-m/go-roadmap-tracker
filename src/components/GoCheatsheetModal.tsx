@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { X, Copy, Check, TerminalSquare } from 'lucide-react';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface GoCheatsheetModalProps {
   isOpen: boolean;
@@ -7,6 +8,7 @@ interface GoCheatsheetModalProps {
 }
 
 export const GoCheatsheetModal: React.FC<GoCheatsheetModalProps> = ({ isOpen, onClose }) => {
+  useScrollLock(isOpen);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   if (!isOpen) return null;
@@ -112,7 +114,7 @@ db.SetConnMaxLifetime(2 * time.Hour)`
         role="dialog"
         aria-modal="true"
         aria-label="Go cheatsheet"
-        className="w-full max-w-lg bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-lg bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button

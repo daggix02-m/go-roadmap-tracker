@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { AlertTriangle, X, ArrowRight, ArrowLeft, GitMerge } from 'lucide-react';
 import { Conflict } from '../utils/merge';
+import { useScrollLock } from '../utils/scrollLock';
 
 export type ConflictResolution = 'local' | 'remote' | 'merge';
 
@@ -20,6 +21,7 @@ interface ConflictModalProps {
  * Optionally remembers the choice so future conflicts auto-resolve.
  */
 export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResolve }) => {
+  useScrollLock(true);
   const panelRef = useRef<HTMLDivElement>(null);
   const [remember, setRemember] = useState(false);
 

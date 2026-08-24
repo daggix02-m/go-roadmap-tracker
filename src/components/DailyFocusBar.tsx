@@ -48,7 +48,7 @@ export const DailyFocusBar: React.FC<DailyFocusBarProps> = ({
           <button
             onClick={onOpenTimer}
             aria-label="Open focus timer"
-            className="p-2 rounded-md border border-line text-muted hover:text-text hover:bg-hover hover:border-line-strong transition-colors cursor-pointer"
+            className="min-h-10 min-w-10 flex items-center justify-center rounded-md border border-line text-muted hover:text-text hover:bg-hover hover:border-line-strong transition-colors cursor-pointer"
           >
             <Timer className="w-4 h-4" />
           </button>

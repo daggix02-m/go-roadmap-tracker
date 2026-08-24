@@ -2,7 +2,10 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>Plan Tracker</title>
     <!-- Content-Security-Policy: no third-party scripts; allow inline styles
          (Tailwind) and connections to the Convex backend + site. -->
@@ -24,7 +27,8 @@
     <meta name="apple-mobile-web-app-title" content="Plan Tracker" />
     <link rel="manifest" href="/manifest.json" />
     <link rel="icon" type="image/svg+xml" href="/icon.svg" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <!-- Apple home-screen icon must be a PNG (SVG is silently ignored on iOS). -->
+    <link rel="apple-touch-icon" href="/icon-180.png" />
 
     <!-- Open Graph -->
     <meta property="og:title" content="Plan Tracker" />

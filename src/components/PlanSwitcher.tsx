@@ -90,7 +90,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
         <div
           role="menu"
           aria-label="Switch plan"
-          className="absolute top-full left-0 mt-2 w-72 max-h-[70vh] overflow-y-auto bg-surface border border-line rounded-lg shadow-xl z-50 p-1.5 animate-fade-in"
+          className="absolute top-full left-0 mt-2 w-72 max-h-[70dvh] overflow-y-auto bg-surface border border-line rounded-lg shadow-xl z-50 p-1.5 animate-fade-in"
         >
           {/* Plan list */}
           <ul className="space-y-0.5">
@@ -135,7 +135,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                       onFork(plan.id);
                       setIsOpen(false);
                     }}
-                    className="p-1.5 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+                    className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
@@ -152,7 +152,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                       onEdit(plan.id);
                       setIsOpen(false);
                     }}
-                    className="p-1.5 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+                    className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
                   >
                     <Pencil className="w-3.5 h-3.5" />
                   </button>
@@ -167,7 +167,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                           onDelete(plan.id);
                           setIsOpen(false);
                         }}
-                        className="p-1.5 rounded-md text-muted hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+                        className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>

@@ -37,7 +37,7 @@ interface HeaderProps {
 }
 
 const iconButtonClass =
-  'p-2 rounded-md border border-line text-muted hover:text-text hover:bg-hover hover:border-line-strong transition-colors cursor-pointer flex items-center gap-1.5 text-xs font-medium';
+  'min-h-10 flex items-center gap-1.5 px-2.5 py-2 rounded-md border border-line text-muted hover:text-text hover:bg-hover hover:border-line-strong transition-colors cursor-pointer text-xs font-medium';
 
 export const Header: React.FC<HeaderProps> = ({
   plan,
@@ -70,7 +70,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [menuOpen]);
 
   return (
-    <header className="bg-page/90 backdrop-blur-md border-b border-line">
+    <header className="bg-page/90 backdrop-blur-md border-b border-line safe-top">
       <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Wordmark / switcher */}

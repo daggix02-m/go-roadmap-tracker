@@ -1,11 +1,12 @@
-const CACHE_NAME = 'go-tracker-pwa-v6';
+const CACHE_NAME = 'go-tracker-pwa-v7';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
   '/icon.svg',
   '/icon-192.png',
-  '/icon-512.png'
+  '/icon-512.png',
+  '/icon-180.png'
 ];
 
 self.addEventListener('install', (event) => {

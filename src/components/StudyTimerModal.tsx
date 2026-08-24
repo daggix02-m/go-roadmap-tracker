@@ -7,6 +7,7 @@ import {
   isRunning,
   remainingSeconds
 } from '../utils/timerEngine';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface StudyTimerModalProps {
   activePhase: Phase;
@@ -45,6 +46,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
   onReset,
   onClose
 }) => {
+  useScrollLock(true);
   const remaining = timer ? remainingSeconds(timer, nowMs) : 0;
   const running = timer ? isRunning(timer) : false;
   const variant = timer?.variant ?? 'study';

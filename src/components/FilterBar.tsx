@@ -75,7 +75,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({ plan, filter, onFilterChan
               id={`filter-pill-${f.key}`}
               onClick={() => onFilterChange({ ...filter, section: f.key })}
               aria-pressed={isActive}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md whitespace-nowrap text-xs font-medium transition-colors cursor-pointer select-none ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-md whitespace-nowrap text-xs font-medium transition-colors cursor-pointer select-none ${
                 isActive
                   ? 'bg-text text-page'
                   : 'bg-surface text-muted hover:text-text hover:bg-hover border border-line'

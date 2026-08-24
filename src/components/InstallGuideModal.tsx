@@ -1,5 +1,6 @@
 import React from 'react';
 import { Download, Share, Smartphone, Monitor, WifiOff, BellRing, X } from 'lucide-react';
+import { useScrollLock } from '../utils/scrollLock';
 
 interface InstallGuideModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ export const InstallGuideModal: React.FC<InstallGuideModalProps> = ({
   canInstallPwa,
   onTriggerPwaInstall
 }) => {
+  useScrollLock(isOpen);
   if (!isOpen) return null;
 
   const stepBadge =
@@ -28,7 +30,7 @@ export const InstallGuideModal: React.FC<InstallGuideModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Install as app"
-        className="w-full max-w-md bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90vh] overflow-y-auto"
+        className="w-full max-w-md bg-surface border border-line rounded-xl p-5 sm:p-6 relative max-h-[90dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <button

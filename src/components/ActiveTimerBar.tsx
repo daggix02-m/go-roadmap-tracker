@@ -76,7 +76,7 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
           <button
             onClick={onToggleRun}
             aria-label={running ? 'Pause timer' : 'Resume timer'}
-            className="p-2 rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+            className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
           >
             {running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
           </button>
@@ -86,7 +86,7 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
           onClick={onStop}
           aria-label="Stop timer"
           title={expired ? 'Dismiss' : 'Stop and reset'}
-          className="p-2 rounded-md text-faint hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+          className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-faint hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
         >
           <Square className="w-4 h-4" />
         </button>
