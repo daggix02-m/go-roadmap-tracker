@@ -121,8 +121,9 @@ export interface Quest {
 }
 
 export interface QuestState {
+  /** Legacy checklist items — no longer used by the phase-XP model, kept for back-compat. */
   items: Quest[];
-  /** questId -> local day ('YYYY-MM-DD') -> true for each completed day. */
+  /** Legacy per-day completions — no longer used, kept for back-compat. */
   completions: Record<string, Record<string, boolean>>;
   xp: number;
   /**
@@ -131,6 +132,8 @@ export interface QuestState {
    * sync across devices so a stale cloud copy can't resurrect old XP.
    */
   rulesVersion?: number;
+  /** phaseIds that have already been awarded XP — prevents double-award and enables clawback. */
+  earnedPhaseIds?: string[];
 }
 
 /** Streak/history shared across all plans. */

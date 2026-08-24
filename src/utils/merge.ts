@@ -214,10 +214,11 @@ function lww<T>(local: T, remote: T, localTs?: number, remoteTs?: number): T {
 }
 
 /**
- * Merge quest state: items union by id (newer `updatedAt` wins per quest),
- * completions are true-wins (a check on any device sticks), xp is
- * best-of-both. A side without quests at all (old client / fresh account)
- * degrades to the populated side.
+ * Merge quest state: legacy item/completion unions are kept for back-compat,
+ * but the phase-XP model only cares about `xp` (best-of-both, rules-aware)
+ * and `earnedPhaseIds` (true-wins union — a phase earning XP on any device
+ * sticks). A side without quests at all (old client / fresh account) degrades
+ * to the populated side.
  */
 function mergeQuests(
   local: QuestState | undefined,
@@ -248,11 +249,17 @@ function mergeQuests(
     }
   }
 
+  // True-wins union of phase ids that already earned XP.
+  const earnedPhaseIds = Array.from(
+    new Set([...(l.earnedPhaseIds ?? []), ...(r.earnedPhaseIds ?? [])])
+  );
+
   return {
     items: [...byId.values()],
     completions,
     xp: rulesVersionAwareXp(l, r),
-    ...(Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) ? { rulesVersion: Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) } : {})
+    ...(Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) ? { rulesVersion: Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) } : {}),
+    ...(earnedPhaseIds.length > 0 ? { earnedPhaseIds } : {})
   };
 }
 

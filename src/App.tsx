@@ -4,7 +4,7 @@ import { NotificationBanner } from './components/NotificationBanner';
 import { FilterBar } from './components/FilterBar';
 import { PhaseCard } from './components/PhaseCard';
 import { DailyFocusBar } from './components/DailyFocusBar';
-import { AppData, AppSettings, FilterState, Plan, PlanProgress, Quest, SECTION_FILTER_PREFIX } from './types';
+import { AppData, AppSettings, FilterState, Plan, PlanProgress, SECTION_FILTER_PREFIX } from './types';
 import {
   loadAppData,
   saveAppData,
@@ -12,10 +12,9 @@ import {
   normalizeAppData,
   emptyPlanProgress,
   emptyQuestState,
-  syncMinuteQuests,
-  toggleQuestCompletion,
+  awardPhaseXp,
+  revokePhaseXp,
   isDayQuestEligible,
-  clearQuestDay,
   getLocalDateString
 } from './utils/storage';
 import { BUILT_IN_PLANS, deleteCustomPlan, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
@@ -236,87 +235,31 @@ export default function App() {
   // --- Daily quests ---------------------------------------------------------
 
   /**
-   * Today's quests are locked until the user completes at least one full phase
-   * (and is active — which opening the app already satisfies via the streak
-   * touch). While locked, nothing can be checked and no XP accrues.
+   * Today's XP card is "locked" (XP can't be earned) until the day is
+   * streak-active AND at least one full phase was completed that day. XP is
+   * awarded directly when a phase is completed (see handleToggleComplete).
    */
   const questsLocked = useMemo(
     () => !isDayQuestEligible(appData, getLocalDateString()),
     [appData]
   );
 
-  /** After study minutes land, auto-complete any minute-target quests for today. */
-  const withQuestSync = useCallback((data: AppData): AppData => {
-    const q = data.quests;
-    if (!q || q.items.length === 0) return data;
-    const day = getLocalDateString();
-    if (!isDayQuestEligible(data, day)) return data;
-    return {
-      ...data,
-      quests: syncMinuteQuests(q, data.global.historyMinutes[day] ?? 0, day, {
-        enabledQuestCount: q.items.filter((i) => i.enabled).length
-      })
-    };
+  /**
+   * Awards the fixed phase-XP to the quest ledger when a phase is completed.
+   * The streak gate is already satisfied because completing a phase records
+   * activity (logStudyActivity) — making the day active.
+   */
+  const withPhaseXp = useCallback((data: AppData, phaseId: number): AppData => {
+    const q = data.quests ?? emptyQuestState();
+    return { ...data, quests: awardPhaseXp(q, phaseId) };
   }, []);
 
-  const handleToggleQuest = useCallback((questId: string) => {
-    handleUpdateData((prev) => {
-      const q = prev.quests ?? emptyQuestState();
-      if (!isDayQuestEligible(prev, getLocalDateString())) return prev;
-      return {
-        ...prev,
-        quests: toggleQuestCompletion(q, questId, getLocalDateString(), {
-          enabledQuestCount: q.items.filter((i) => i.enabled).length
-        })
-      };
-    });
-  }, [handleUpdateData]);
-
-  /** Creates a new quest or applies an edit patch when the id already exists. */
-  const handleUpsertQuest = useCallback((quest: Quest) => {
-    handleUpdateData((prev) => {
-      const q = prev.quests ?? emptyQuestState();
-      const items = q.items.some((i) => i.id === quest.id)
-        ? q.items.map((i) => (i.id === quest.id ? quest : i))
-        : [...q.items, quest];
-      return { ...prev, quests: { ...q, items } };
-    });
-  }, [handleUpdateData]);
-
-  const handleDeleteQuest = useCallback((questId: string) => {
-    handleUpdateData((prev) => {
-      const q = prev.quests ?? emptyQuestState();
-      const completions = { ...q.completions };
-      delete completions[questId];
-      return {
-        ...prev,
-        quests: { ...q, items: q.items.filter((i) => i.id !== questId), completions }
-      };
-    });
-  }, [handleUpdateData]);
-
-  /** One-tap showcase: Nord theme + Focus layout + goal ring (+ template quests when none exist). */
+  /** One-tap showcase: Nord theme + Focus layout + goal ring. */
   const handleApplyDemoSetup = useCallback(() => {
-    handleUpdateData((prev) => {
-      let quests = prev.quests ?? emptyQuestState();
-      if (quests.items.length === 0) {
-        const base = Date.now();
-        quests = {
-          ...emptyQuestState(),
-          items: [
-            { id: 'demo_q_review', title: 'Review yesterday', emoji: '🔁', targetMinutes: 15, enabled: true, createdAt: base },
-            { id: 'demo_q_docs', title: 'Read documentation', emoji: '📖', targetMinutes: 20, enabled: true, createdAt: base + 1 },
-            { id: 'demo_q_practice', title: 'Practice problems', emoji: '🧩', targetMinutes: 30, enabled: true, createdAt: base + 2 },
-            { id: 'demo_q_cards', title: 'Flashcards', emoji: '🃏', targetMinutes: 10, enabled: true, createdAt: base + 3 }
-          ]
-        };
-      }
-      return {
-        ...prev,
-        quests,
-        settings: { ...prev.settings, theme: 'nord', layout: 'focus', homeWidget: 'ring' }
-      };
-    });
+    handleUpdateData((prev) => ({
+      ...prev,
+      settings: { ...prev.settings, theme: 'nord', layout: 'focus', homeWidget: 'ring' }
+    }));
   }, [handleUpdateData]);
 
   /** Restore a full JSON backup (Import flow). */
@@ -392,14 +335,13 @@ export default function App() {
     const isAlreadyComplete = progress.completedPhases.includes(phaseId);
 
     if (isAlreadyComplete) {
-      // Un-completing removes the phase-done stamp. If that leaves the day
-      // with no completed phase at all, today's quest XP is clawed back and
-      // the quests re-lock.
+      // Un-completing removes the phase-done stamp and refunds the XP that
+      // completing this phase awarded.
       handleUpdateData((prev) => {
         const current = prev.progressByPlan[activePlan.id] ?? emptyPlanProgress();
         const phaseDoneDay = { ...(current.phaseDoneDay ?? {}) };
         delete phaseDoneDay[String(phaseId)];
-        let next: AppData = {
+        const next: AppData = {
           ...prev,
           progressByPlan: {
             ...prev.progressByPlan,
@@ -410,22 +352,16 @@ export default function App() {
             }
           }
         };
-        const q = next.quests;
-        if (q && !isDayQuestEligible(next, getLocalDateString())) {
-          next = {
-            ...next,
-            quests: clearQuestDay(q, getLocalDateString(), {
-              enabledQuestCount: q.items.filter((i) => i.enabled).length
-            })
-          };
-        }
-        return next;
+        return {
+          ...next,
+          quests: revokePhaseXp(next.quests ?? emptyQuestState(), phaseId)
+        };
       });
       return;
     }
 
-    // Completing also checks every exit criterion and records activity for the
-    // streak — which makes today active AND phase-completed, unlocking quests.
+    // Completing also checks every exit criterion, records activity for the
+    // streak (making the day active), and awards the fixed phase XP.
     handleUpdateData((prev) => {
       const current = prev.progressByPlan[activePlan.id] ?? emptyPlanProgress();
       const phase = activePlan.phases.find((p) => p.id === phaseId);
@@ -443,9 +379,9 @@ export default function App() {
           }
         }
       };
-      return logStudyActivity(withCompletion, activePlan.id, phaseId, 0);
+      return withPhaseXp(logStudyActivity(withCompletion, activePlan.id, phaseId, 0), phaseId);
     });
-  }, [updateProgress, handleUpdateData, progress, activePlan]);
+  }, [updateProgress, handleUpdateData, progress, activePlan, withPhaseXp]);
 
   const handleSaveNote = useCallback((phaseId: number, note: string) => {
     updateProgress((prev) => ({
@@ -459,9 +395,7 @@ export default function App() {
 
   const handleLogStudySession = (minutes: number) => {
     if (!activePhase) return;
-    handleStateReload(
-      withQuestSync(logStudyActivity(appData, activePlan.id, activePhase.id, minutes))
-    );
+    handleStateReload(logStudyActivity(appData, activePlan.id, activePhase.id, minutes));
   };
 
   // --- Focus timer control (state lives here so it outlives the modal) -----
@@ -574,7 +508,7 @@ export default function App() {
         minutes
       );
       handleUpdateData((prev) =>
-        withQuestSync(logStudyActivity(prev, activePlan.id, activePhase.id, minutes))
+        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
       );
     }
     // Frozen at zero ("Done") until a new preset or Stop is chosen.
@@ -599,7 +533,7 @@ export default function App() {
     if ((f.variant ?? 'study') === 'study' && activePhase) {
       const minutes = Math.max(1, Math.round(f.durationSec / 60));
       handleUpdateData((prev) =>
-        withQuestSync(logStudyActivity(prev, activePlan.id, activePhase.id, minutes))
+        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -781,7 +715,7 @@ export default function App() {
   }, [activePlan, filter, progress]);
 
   return (
-    <div className="min-h-screen bg-page text-text pb-24">
+    <div className="min-h-screen bg-page text-text page-bottom-clearance">
       {/* Header + timer bar stick together as one unit */}
       <div className="sticky top-0 z-40">
         <Header
@@ -896,14 +830,10 @@ export default function App() {
           onChangeWidget={(id) => handleUpdateSettings((prev) => ({ ...prev, homeWidget: id }))}
         />
 
-        {/* Daily routines + XP */}
+        {/* Phase XP + levels */}
         <DailyQuests
           quests={appData.quests ?? emptyQuestState()}
-          day={getLocalDateString()}
           locked={questsLocked}
-          onToggleQuest={handleToggleQuest}
-          onAddQuest={handleUpsertQuest}
-          onDeleteQuest={handleDeleteQuest}
         />
 
         {/* Intro: the method */}

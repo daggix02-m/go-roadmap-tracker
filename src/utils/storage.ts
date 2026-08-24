@@ -71,14 +71,14 @@ export function emptyPlanProgress(): PlanProgress {
 // Daily quests — XP economy
 // ---------------------------------------------------------------------------
 
-export const QUEST_XP_PER_COMPLETION = 10;
-export const QUEST_ALL_DONE_BONUS_XP = 25;
+/** XP awarded for completing one full roadmap phase. Repeatable — multiple phases stack. */
+export const QUEST_XP_PER_PHASE = 25;
 /**
- * Current XP economy rules. Days only earn XP when the user keeps their
- * streak AND completes a full phase. Bump to invalidate old XP balances
- * (normalizeAppData resets them to 0 once).
+ * Current XP economy rules. XP only accrues from completing roadmap phases
+ * (the old manual checklist economy is gone). Bump to invalidate old XP
+ * balances (normalizeAppData resets them to 0 once).
  */
-export const QUEST_RULES_VERSION = 1;
+export const QUEST_RULES_VERSION = 2;
 
 /** Quadratic level curve: L1 at 0 XP, L2 at 100, L3 at 400, Ln at (L-1)²·100. */
 export function xpForLevel(level: number): number {
@@ -96,80 +96,43 @@ export function emptyQuestState(): QuestState {
 }
 
 /**
- * Toggles one quest's completion for `day` and keeps the XP ledger honest:
- * +10 per completion, +25 bonus the moment every enabled quest is done,
- * with exact refunds on un-toggle and a floor of zero.
+ * Awards QUEST_XP_PER_PHASE for a completed phase and records it in
+ * `earnedPhaseIds` so the same phase is never double-paid. Pure and
+ * idempotent — a no-op when the phase already earned XP.
  */
-export function toggleQuestCompletion(
-  state: QuestState,
-  questId: string,
-  day: string,
-  opts: { enabledQuestCount: number }
-): QuestState {
-  const doneOn = (completions: QuestState['completions'], qid: string) =>
-    completions[qid]?.[day] === true;
-
-  /** True when every enabled quest is complete once `questIdDone` holds. */
-  const allEnabledDone = (questIdDone: boolean): boolean => {
-    if (opts.enabledQuestCount <= 0) return false;
-    const enabled = state.items.filter((q) => q.enabled);
-    const othersDone = enabled.every((q) => q.id === questId || doneOn(state.completions, q.id));
-    const thisOneOk = !enabled.some((q) => q.id === questId) || questIdDone;
-    return othersDone && thisOneOk;
-  };
-
-  const wasDone = doneOn(state.completions, questId);
-  const completions: QuestState['completions'] = { ...state.completions };
-
-  let delta = 0;
-  if (wasDone) {
-    const days = { ...(completions[questId] ?? {}) };
-    delete days[day];
-    if (Object.keys(days).length === 0) delete completions[questId];
-    else completions[questId] = days;
-    delta -= QUEST_XP_PER_COMPLETION;
-    // The set WAS complete before this un-toggle — claw back the bonus too.
-    if (allEnabledDone(true)) delta -= QUEST_ALL_DONE_BONUS_XP;
-  } else {
-    completions[questId] = { ...(completions[questId] ?? {}), [day]: true };
-    delta += QUEST_XP_PER_COMPLETION;
-    if (allEnabledDone(true)) delta += QUEST_ALL_DONE_BONUS_XP;
-  }
-
+export function awardPhaseXp(state: QuestState, phaseId: number | string): QuestState {
+  const key = String(phaseId);
+  const earned = state.earnedPhaseIds ?? [];
+  if (earned.includes(key)) return state;
   return {
     ...state,
-    completions,
-    xp: Math.max(0, state.xp + delta)
+    earnedPhaseIds: [...earned, key],
+    xp: state.xp + QUEST_XP_PER_PHASE
   };
 }
 
 /**
- * Marks enabled minute-target quests complete for `day` once enough focus
- * time has been logged. Pure and idempotent — safe to run after every study
- * log. Note: un-checking an auto-completed quest is temporary; the next
- * study log that still meets the target marks it again.
+ * Refunds QUEST_XP_PER_PHASE when a completed phase is un-completed and drops
+ * it from `earnedPhaseIds` (so re-completing pays again). Exact inverse of
+ * `awardPhaseXp`, floored at zero. Returns the state unchanged when the phase
+ * was never awarded.
  */
-export function syncMinuteQuests(
-  state: QuestState,
-  todayMinutes: number,
-  day: string,
-  opts: { enabledQuestCount: number }
-): QuestState {
-  let next = state;
-  for (const q of state.items) {
-    if (!q.enabled || !q.targetMinutes || q.targetMinutes <= 0) continue;
-    if (todayMinutes < q.targetMinutes) continue;
-    if (next.completions[q.id]?.[day]) continue;
-    next = toggleQuestCompletion(next, q.id, day, opts);
-  }
-  return next;
+export function revokePhaseXp(state: QuestState, phaseId: number | string): QuestState {
+  const key = String(phaseId);
+  const earned = state.earnedPhaseIds ?? [];
+  if (!earned.includes(key)) return state;
+  return {
+    ...state,
+    earnedPhaseIds: earned.filter((id) => id !== key),
+    xp: Math.max(0, state.xp - QUEST_XP_PER_PHASE)
+  };
 }
 
 /**
- * XP gate: a day is only eligible to earn quest XP when the user kept their
- * streak (the day shows up as active) AND completed at least one full phase
- * that day. Mirrors the streak's notion of "active day" — opening the app
- * counts, exactly like `calculateGlobalStreak`.
+ * XP gate: a day only counts as eligible when the user kept their streak (the
+ * day shows up as active) AND completed at least one full phase that day.
+ * Mirrors the streak's notion of "active day" — opening the app counts,
+ * exactly like `calculateGlobalStreak`.
  */
 export function isDayQuestEligible(data: AppData, day: string): boolean {
   const active =
@@ -179,38 +142,6 @@ export function isDayQuestEligible(data: AppData, day: string): boolean {
   return Object.values(data.progressByPlan).some((pp) =>
     Object.values(pp.phaseDoneDay ?? {}).includes(day)
   );
-}
-
-/**
- * Strips every quest completion for `day` and claws back the XP that day
- * earned — +10 per completed quest plus the +25 all-done bonus when the whole
- * enabled set was done. Used when a day stops qualifying for XP (e.g. the
- * completing phase is un-completed). Returns the state unchanged when the day
- * had nothing recorded.
- */
-export function clearQuestDay(
-  state: QuestState,
-  day: string,
-  opts: { enabledQuestCount: number }
-): QuestState {
-  const completions: QuestState['completions'] = {};
-  let removed = 0;
-  for (const [questId, days] of Object.entries(state.completions)) {
-    if (days[day]) removed += 1;
-    const rest = { ...days };
-    delete rest[day];
-    if (Object.keys(rest).length > 0) completions[questId] = rest;
-  }
-  if (removed === 0) return state;
-
-  const enabled = state.items.filter((q) => q.enabled);
-  const hadAll =
-    opts.enabledQuestCount > 0 &&
-    enabled.length > 0 &&
-    enabled.every((q) => state.completions[q.id]?.[day] === true);
-  const delta = removed * QUEST_XP_PER_COMPLETION + (hadAll ? QUEST_ALL_DONE_BONUS_XP : 0);
-
-  return { ...state, completions, xp: Math.max(0, state.xp - delta) };
 }
 
 export function defaultAppData(): AppData {
@@ -286,6 +217,13 @@ function sanitizeQuestState(value: unknown): QuestState | undefined {
     }
   }
 
+  const earnedPhaseIds: string[] = [];
+  if (Array.isArray(raw.earnedPhaseIds)) {
+    for (const id of raw.earnedPhaseIds) {
+      if (typeof id === 'string' && /^\d+$/.test(id)) earnedPhaseIds.push(id);
+    }
+  }
+
   return {
     items,
     completions,
@@ -297,7 +235,8 @@ function sanitizeQuestState(value: unknown): QuestState | undefined {
     Number.isFinite(raw.rulesVersion) &&
     raw.rulesVersion > 0
       ? { rulesVersion: Math.floor(raw.rulesVersion) }
-      : {})
+      : {}),
+    ...(earnedPhaseIds.length > 0 ? { earnedPhaseIds } : {})
   };
 }
 
