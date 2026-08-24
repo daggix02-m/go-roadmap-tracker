@@ -49,9 +49,9 @@ export function sendDailyReminderNotification(
       navigator.serviceWorker.ready.then((reg) => {
         reg.showNotification(title, options);
       });
-    } else {
-      new Notification(title, options);
     }
+    // Skip delivery when service worker isn't controlling the page —
+    // using new Notification() directly causes black screens on mobile.
     return true;
   } catch (err) {
     console.error('Failed to send notification:', err);
@@ -77,9 +77,9 @@ export function sendTestNotification(activePhase: Phase, streak: number, planNam
       navigator.serviceWorker.ready.then((reg) => {
         reg.showNotification(title, options);
       });
-    } else {
-      new Notification(title, options);
     }
+    // Skip delivery when service worker isn't controlling the page —
+    // using new Notification() directly causes black screens on mobile.
     return true;
   } catch (err) {
     console.error('Failed to send test notification:', err);
@@ -153,9 +153,9 @@ export function notifyFocusComplete(phaseLabel: string, minutesStudied: number):
   try {
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.ready.then((reg) => reg.showNotification(title, options));
-    } else {
-      new Notification(title, options);
     }
+    // Skip delivery when service worker isn't controlling the page —
+    // using new Notification() directly causes black screens on mobile.
   } catch {
     // Notification unavailable
   }

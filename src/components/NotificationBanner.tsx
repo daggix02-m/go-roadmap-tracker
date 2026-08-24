@@ -73,24 +73,31 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
       return; // The install prompt handles this via InstallGuideModal.
     }
 
-    const phaseLabel = `Phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`;
-
-    // Try push subscription first (works when app is closed).
-    if (push.supported && !push.subscribed) {
-      const tz = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-      await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
-    }
-
-    // Also enable local notification permission as fallback.
-    if (supported) {
-      const res = await requestNotificationPermission();
-      setPermission(res);
-      if (res === 'granted') {
-        onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
-        sendTestNotification(activePhase, streak, planName);
+    try {
+      // Request notification permission FIRST — this may show a native dialog
+      // on mobile that suspends page rendering. Do it before modifying any
+      // server-side state so if the dialog causes issues we haven't committed
+      // to a subscription.
+      if (supported) {
+        const res = await requestNotificationPermission();
+        setPermission(res);
+        if (res !== 'granted') {
+          return;
+        }
       }
-    } else {
+
+      // Permission granted (or Notification API unavailable) — proceed with
+      // push subscription (works when app is closed).
+      const phaseLabel = `Phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`;
+      if (push.supported && !push.subscribed) {
+        const tz = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+        await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
+      }
+
       onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
+      sendTestNotification(activePhase, streak, planName);
+    } catch (err) {
+      console.error('Failed to enable reminders:', err);
     }
   };
 
