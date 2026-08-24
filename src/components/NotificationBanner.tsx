@@ -82,6 +82,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
         const res = await requestNotificationPermission();
         setPermission(res);
         if (res !== 'granted') {
+          console.warn('[Notifications] Permission not granted:', res);
           return;
         }
       }
@@ -90,6 +91,13 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
       // push subscription (works when app is closed).
       const phaseLabel = `Phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`;
       if (push.supported && !push.subscribed) {
+        // Ensure permission is actually granted before attempting push.
+        // Some browsers require notification permission for push to work.
+        const currentPerm = 'Notification' in window ? Notification.permission : 'default';
+        if (currentPerm !== 'granted') {
+          console.warn('[Notifications] Cannot subscribe to push: permission is', currentPerm);
+          return;
+        }
         const tz = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
         await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
       }
