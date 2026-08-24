@@ -57,3 +57,24 @@ export function validateVapidKey(key: unknown): VapidKeyValidation {
 
   return { valid: true };
 }
+
+/**
+ * Convert a base64url-encoded string to a Uint8Array.
+ *
+ * PushManager.subscribe() expects `applicationServerKey` as a BufferSource
+ * (Uint8Array or ArrayBuffer), not a raw string. Passing a string causes
+ * the browser to attempt an implicit conversion that may produce an invalid
+ * key, resulting in "AbortError: Registration failed - push service error".
+ */
+export function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  // Strip existing padding, then re-pad correctly
+  const stripped = base64String.replace(/=+$/, '');
+  const base64 = stripped.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const rawData = atob(padded);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateVapidKey } from '../src/utils/vapidKey';
+import { validateVapidKey, urlBase64ToUint8Array } from '../src/utils/vapidKey';
 
 /**
  * vapidKeyValidation — documents the contract for VAPID key validation.
@@ -116,5 +116,76 @@ describe('subscribeSafety contract', () => {
     const logMessage = error.message || String(error);
     assert.match(logMessage, /AbortError/);
     assert.match(logMessage, /push service error/);
+  });
+});
+
+/**
+ * urlBase64ToUint8Array — documents the contract for converting VAPID keys.
+ *
+ * BUG: PushManager.subscribe() throws "AbortError: Registration failed -
+ * push service error" when applicationServerKey is passed as a raw
+ * base64url string instead of a Uint8Array/ArrayBuffer.
+ *
+ * FIX: Convert the base64url string to a Uint8Array before passing it
+ * to PushManager.subscribe().
+ */
+describe('urlBase64ToUint8Array', () => {
+  // This test WILL FAIL until urlBase64ToUint8Array is exported from vapidKey.ts.
+  // That's the point — RED first, then GREEN.
+
+  it('converts a base64url string to a Uint8Array', () => {
+    // This will fail with "Cannot find name 'urlBase64ToUint8Array'"
+    const key = makeValidKey();
+    const bytes = urlBase64ToUint8Array(key);
+    assert.ok(bytes instanceof Uint8Array, 'should return a Uint8Array');
+  });
+
+  it('produces exactly 65 bytes for a valid VAPID key', () => {
+    const key = makeValidKey();
+    const bytes = urlBase64ToUint8Array(key);
+    assert.equal(bytes.length, 65, `expected 65 bytes, got ${bytes.length}`);
+  });
+
+  it('preserves the first byte (0x04 EC uncompressed prefix)', () => {
+    const key = makeValidKey();
+    const bytes = urlBase64ToUint8Array(key);
+    assert.equal(bytes[0], 0x04, 'first byte should be 0x04 (EC uncompressed point)');
+  });
+
+  it('round-trips: encode → decode → encode matches original', () => {
+    const original = makeValidKey();
+    const bytes = urlBase64ToUint8Array(original);
+    // Encode back to base64url
+    let base64 = '';
+    for (let i = 0; i < bytes.length; i++) {
+      base64 += String.fromCharCode(bytes[i]);
+    }
+    const roundTripped = btoa(base64)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+    assert.equal(roundTripped, original, 'round-trip should produce the same key');
+  });
+
+  it('handles keys with - and _ characters (base64url)', () => {
+    // Generate a key with values that produce - and _ in base64url
+    const bytes = new Uint8Array(65);
+    bytes[0] = 0x04;
+    for (let i = 1; i < 65; i++) bytes[i] = i;
+    const base64 = Buffer.from(bytes).toString('base64');
+    const key = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+
+    const result = urlBase64ToUint8Array(key);
+    assert.equal(result.length, 65, 'should decode to 65 bytes');
+    // Verify the bytes match the original
+    for (let i = 0; i < 65; i++) {
+      assert.equal(result[i], bytes[i], `byte ${i} should match`);
+    }
+  });
+
+  it('handles keys with padding (=)', () => {
+    const key = makeValidKey() + '==';
+    const bytes = urlBase64ToUint8Array(key);
+    assert.equal(bytes.length, 65, 'should handle padded key');
   });
 });

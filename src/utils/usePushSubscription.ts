@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { validateVapidKey } from './vapidKey';
+import { validateVapidKey, urlBase64ToUint8Array } from './vapidKey';
 
 function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -107,7 +107,7 @@ export function usePushSubscription(): PushState & PushActions {
 
         const sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: vapidKey
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
         });
         console.log('[Push] Subscription successful', { endpoint: sub.endpoint.slice(0, 50) + '...' });
         // Store in Convex.
