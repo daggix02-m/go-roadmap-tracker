@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { validateVapidKey } from './vapidKey';
 
 function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -65,7 +66,17 @@ export function usePushSubscription(): PushState & PushActions {
 
   const subscribe = useCallback(
     async (reminderTime: string, tz: string, activePhaseLabel?: string) => {
-      if (!pushSupported || !vapidKey) return;
+      if (!pushSupported) return;
+
+      // Validate VAPID key before attempting subscription — PushManager
+      // throws a cryptic "AbortError: Registration failed - push service
+      // error" when the key is invalid, with no actionable detail.
+      const validation = validateVapidKey(vapidKey);
+      if (!validation.valid) {
+        console.error('Push subscribe aborted:', validation.reason);
+        return;
+      }
+
       setLoading(true);
       try {
         const reg = await navigator.serviceWorker.ready;
@@ -83,7 +94,11 @@ export function usePushSubscription(): PushState & PushActions {
         });
         setSubscribed(true);
       } catch (err) {
-        console.error('Push subscribe failed:', err);
+        // Log the full error message — "AbortError: Registration failed -
+        // push service error" usually means invalid VAPID keys or the push
+        // service is unavailable (offline, blocked by browser settings).
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Push subscribe failed: ${msg}`, err);
       } finally {
         setLoading(false);
       }
