@@ -232,6 +232,17 @@ input[type='checkbox'] {
   align-items: start;
 }
 
+/*
+ * Grid children default to min-width:auto, which lets an intrinsically wide
+ * child (a long code line in a phase card, a wide step row) blow the single
+ * 1fr column out past the viewport on mobile. Zero the automatic minimum so
+ * cards shrink to the container and wide content scrolls *inside* the card
+ * (the <pre> code blocks already overflow-x:auto).
+ */
+.phase-grid > * {
+  min-width: 0;
+}
+
 @media (min-width: 1280px) {
   [data-layout='dashboard'] .phase-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
