@@ -5,14 +5,14 @@
  * 1. On sign-in: pull cloud snapshot → three-way merge with local → push merged → store lastSynced.
  * 2. Background: push local snapshot to cloud every 5 min (if authenticated).
  * 3. On sign-out: push final local snapshot.
- * 4. If merge produces conflicts → expose for ConflictModal.
+ * 4. Conflicts are auto-resolved in favor of the cloud snapshot (no user prompt).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { threeWayMerge, canonicalJson, Conflict, resolveWithPreference } from './merge';
-import { AppData, ConflictResolutionPref } from '../types';
+import { syncMerge, canonicalJson } from './merge';
+import { AppData } from '../types';
 import { loadAppData, saveAppData, onAppDataSaved } from './storage';
 import { getDeviceLabel } from './device';
 
@@ -26,14 +26,6 @@ export interface SyncState {
   lastPushedAt: number | null;
   /** Timestamp of the last completed sync cycle (pull+merge or push). */
   lastSyncedAt: number | null;
-  /** Conflicts from the last merge that need user resolution. */
-  pendingConflicts: Conflict[] | null;
-  /** Resolved merged data waiting for user decision (null = none). */
-  pendingMerged: AppData | null;
-  /** Local snapshot that was diverged (for "keep both" fork). */
-  pendingLocal: AppData | null;
-  /** Remote snapshot that was diverged (for "keep both" fork). */
-  pendingRemote: AppData | null;
   /** The most recent state applied to localStorage by the sync engine. */
   syncedData: AppData | null;
 }
@@ -43,14 +35,6 @@ export interface SyncActions {
   syncNow: () => Promise<void>;
   /** Push local data to cloud immediately (no merge, no conflict). */
   pushNow: () => Promise<void>;
-  /**
-   * User (or their remembered preference) chose a resolution for pending
-   * conflicts. `remember` also stores the choice in settings for future syncs.
-   */
-  resolveConflicts: (
-    resolution: 'local' | 'remote' | 'merge',
-    remember?: boolean
-  ) => Promise<void>;
 }
 
 const DEVICE_LABEL = getDeviceLabel();
@@ -69,10 +53,6 @@ export function useSync(): SyncState & SyncActions {
   const [syncing, setSyncing] = useState(false);
   const [lastPushedAt, setLastPushedAt] = useState<number | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-  const [pendingConflicts, setPendingConflicts] = useState<Conflict[] | null>(null);
-  const [pendingMerged, setPendingMerged] = useState<AppData | null>(null);
-  const [pendingLocal, setPendingLocal] = useState<AppData | null>(null);
-  const [pendingRemote, setPendingRemote] = useState<AppData | null>(null);
   // The latest state the sync engine applied locally. App subscribes to this
   // so the UI reflects cloud-merged data after sign-in / background sync —
   // otherwise the React state stays stale until a manual reload.
@@ -86,9 +66,9 @@ export function useSync(): SyncState & SyncActions {
   // (right after a push commits), so we need a ref.
   const syncingRef = useRef(false);
 
-  // Serializes pushes so sign-in sync, background interval, sign-out and
-  // conflict-resolution never fire `snapshots.put` concurrently from the same
-  // tab — one of the triggers for OptimisticConcurrencyControlFailure.
+  // Serializes pushes so sign-in sync, background interval, sign-out
+  // never fire `snapshots.put` concurrently from the same tab — one of the
+  // triggers for OptimisticConcurrencyControlFailure.
   const pushQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   /**
@@ -141,8 +121,8 @@ export function useSync(): SyncState & SyncActions {
 
   /** Full sync cycle: pull → merge → push. */
   const syncNow = useCallback(async () => {
-    // Don't re-sync while conflicts are unresolved or a cycle is in flight.
-    if (!isAuthenticated || pendingConflicts || syncingRef.current) return;
+    // Don't re-sync while a cycle is in flight.
+    if (!isAuthenticated || syncingRef.current) return;
     syncingRef.current = true;
     setSyncing(true);
     try {
@@ -163,93 +143,35 @@ export function useSync(): SyncState & SyncActions {
       const lastSyncedStr = localStorage.getItem('plan_tracker_last_synced');
       const base: AppData | null = lastSyncedStr ? JSON.parse(lastSyncedStr) : null;
 
-      const { merged, conflicts } = threeWayMerge(base, local, remoteData);
+      // Merge for sync: rich merge for non-conflicts, cloud wins on conflict.
+      const final = syncMerge(base, local, remoteData);
 
-      if (conflicts.length === 0) {
-        // Auto-resolved — adopt the merged state locally and use it as the
-        // base for future merges. Silent save: this is a sync-internal write,
-        // not a user action, so it must not trigger the debounced re-push.
-        saveAppData(merged, { silent: true });
-        localStorage.setItem('plan_tracker_last_synced', JSON.stringify(merged));
-        // Only push back if the cloud doesn't already have this state.
-        // Note the comparison is canonical (key-sorted): Convex re-serializes
-        // stored documents with sorted object keys, so a raw JSON.stringify
-        // comparison against the echoed snapshot never settles and re-pushes
-        // forever (~every 500ms, the runaway echo).
-        if (canonicalJson(merged) !== canonicalJson(remoteData)) {
-          await pushNow(merged);
-        }
-        setSyncedData(merged);
-        return;
+      // Silent save: this is a sync-internal write, not a user action, so it
+      // must not trigger the debounced re-push.
+      saveAppData(final, { silent: true });
+      localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
+
+      // Only push back if the cloud doesn't already have this state.
+      // Note the comparison is canonical (key-sorted): Convex re-serializes
+      // stored documents with sorted object keys, so a raw JSON.stringify
+      // comparison against the echoed snapshot never settles and re-pushes
+      // forever (~every 500ms, the runaway echo).
+      if (canonicalJson(final) !== canonicalJson(remoteData)) {
+        await pushNow(final);
       }
 
-      // Remembered preference? Apply it without interrupting the user.
-      const pref = local.settings.conflictResolution;
-      if (pref && pref !== 'ask') {
-        const final = resolveWithPreference(pref, local, remoteData);
-        saveAppData(final, { silent: true });
-        localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
-        setSyncedData(final);
-        try {
-          await pushNow(final);
-        } catch {
-          // Push failed — next sync cycle retries against fresh cloud state.
-        }
-        return;
-      }
-
-      // Conflicts need a human decision — pause sync, show modal.
-      setPendingConflicts(conflicts);
-      setPendingMerged(merged);
-      setPendingLocal(local);
-      setPendingRemote(remoteData);
+      setSyncedData(final);
     } finally {
       syncingRef.current = false;
       setSyncing(false);
       // A completed cycle (pull+merge or first push) means the data is synced.
       setLastSyncedAt(Date.now());
     }
-  }, [isAuthenticated, cloudSnapshot, pushNow, pendingConflicts]);
-
-  /** Resolve pending conflicts (from the modal, or a remembered preference). */
-  const resolveConflicts = useCallback(
-    async (resolution: 'local' | 'remote' | 'merge', remember?: boolean) => {
-      if (!pendingMerged || !pendingLocal || !pendingRemote) return;
-
-      const final = resolveWithPreference(resolution, pendingLocal, pendingRemote);
-      if (remember) {
-        // Store the standing choice inside the resolved state itself so one
-        // save covers both the outcome and the preference.
-        final.settings.conflictResolution = resolution;
-      }
-
-      saveAppData(final, { silent: true });
-      localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
-      setSyncedData(final);
-      // Push the resolved state and only clear the conflict once the cloud
-      // actually has it — otherwise the auto-sync can re-detect the same
-      // conflict against a stale snapshot (modal reappears and gets stuck).
-      try {
-        await pushNow(final);
-      } catch {
-        return; // push failed — keep the modal open so the user can retry
-      }
-
-      // Clear conflict state.
-      setPendingConflicts(null);
-      setPendingMerged(null);
-      setPendingLocal(null);
-      setPendingRemote(null);
-    },
-    [pendingMerged, pendingLocal, pendingRemote, pushNow]
-  );
+  }, [isAuthenticated, cloudSnapshot, pushNow]);
 
   // Latest syncNow for the auto-sync effect. We keep the effect dependent
   // only on `isAuthenticated`/`cloudSnapshot`, NOT on syncNow's identity —
-  // syncNow changes whenever pendingConflicts flips, which would re-fire the
-  // effect immediately after resolving a conflict and re-merge against the
-  // still-stale cloud snapshot, re-creating the very conflict the user just
-  // resolved (modal reappears and gets stuck).
+  // syncNow is now stable (no conflict state to cause re-creation).
   const syncNowRef = useRef(syncNow);
   useEffect(() => {
     syncNowRef.current = syncNow;
@@ -265,10 +187,10 @@ export function useSync(): SyncState & SyncActions {
   useEffect(() => {
     if (!isAuthenticated) return;
     const id = setInterval(() => {
-      if (!pendingConflicts) pushNow();
+      pushNow();
     }, PUSH_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [isAuthenticated, pendingConflicts, pushNow]);
+  }, [isAuthenticated, pushNow]);
 
   // Debounced push after a user action. `saveAppData` notifies us on every
   // non-silent save (App.tsx / logStudyActivity); we push a short moment
@@ -277,13 +199,13 @@ export function useSync(): SyncState & SyncActions {
   // final state is already in the cloud before the token is invalidated.
   const pushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const schedulePush = useCallback(() => {
-    if (!isAuthenticated || pendingConflicts) return;
+    if (!isAuthenticated) return;
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
     pushTimerRef.current = setTimeout(() => {
       pushTimerRef.current = null;
       pushNow();
     }, PUSH_DEBOUNCE_MS);
-  }, [isAuthenticated, pendingConflicts, pushNow]);
+  }, [isAuthenticated, pushNow]);
 
   useEffect(() => {
     const off = onAppDataSaved(schedulePush);
@@ -297,13 +219,8 @@ export function useSync(): SyncState & SyncActions {
     syncing,
     lastPushedAt,
     lastSyncedAt,
-    pendingConflicts,
-    pendingMerged,
-    pendingLocal,
-    pendingRemote,
     syncedData,
     syncNow,
-    pushNow,
-    resolveConflicts
+    pushNow
   };
 }

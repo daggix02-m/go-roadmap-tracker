@@ -1,7 +1,6 @@
 import {
   AppData,
   AppSettings,
-  CONFLICT_RESOLUTION_PREFS,
   GlobalActivity,
   PlanProgress,
   Quest,
@@ -279,12 +278,6 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
   }
   if (parsed.settings?.homeWidget && HOME_WIDGET_IDS.includes(parsed.settings.homeWidget)) {
     settings.homeWidget = parsed.settings.homeWidget;
-  }
-  if (
-    parsed.settings?.conflictResolution &&
-    CONFLICT_RESOLUTION_PREFS.includes(parsed.settings.conflictResolution)
-  ) {
-    settings.conflictResolution = parsed.settings.conflictResolution;
   }
 
   const global = { ...base.global };

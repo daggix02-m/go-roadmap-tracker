@@ -79,16 +79,7 @@ export interface AppSettings {
   layout?: LayoutPreset;
   /** Which activity widget shows on the home page; absent = contribution grid. */
   homeWidget?: HomeWidgetId;
-  /**
-   * How sync conflicts auto-resolve; absent/'ask' = always show the modal.
-   * Remembered via the conflict dialog, changeable in Settings → Preferences.
-   */
-  conflictResolution?: ConflictResolutionPref;
 }
-
-/** User's standing choice for resolving sync conflicts. */
-export const CONFLICT_RESOLUTION_PREFS = ['ask', 'local', 'remote', 'merge'] as const;
-export type ConflictResolutionPref = (typeof CONFLICT_RESOLUTION_PREFS)[number];
 
 // ---------------------------------------------------------------------------
 // Appearance customization (themes / layouts / home widgets)

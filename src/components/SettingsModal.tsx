@@ -793,33 +793,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
             </div>
 
-            {/* Sync conflicts — applies instantly */}
-            <div>
-              <label htmlFor="settings-conflict" className={labelClass}>
-                Sync conflicts
-              </label>
-              <select
-                id="settings-conflict"
-                value={settings.conflictResolution ?? 'ask'}
-                onChange={(e) =>
-                  onUpdateSettings((prev) => ({
-                    ...prev,
-                    conflictResolution: e.target.value as AppSettings['conflictResolution']
-                  }))
-                }
-                className="w-full px-2.5 py-2 rounded-md bg-raised border border-line text-xs text-text focus:outline-none focus:border-accent/60 cursor-pointer"
-              >
-                <option value="ask" className="bg-page">Ask me every time</option>
-                <option value="local" className="bg-page">Prefer this device</option>
-                <option value="remote" className="bg-page">Prefer cloud</option>
-                <option value="merge" className="bg-page">Keep both versions</option>
-              </select>
-              <p className="text-[11px] text-faint mt-1">
-                How to resolve conflicting changes when two devices have diverged.
-                Applies immediately.
-              </p>
-            </div>
-
             <button
               onClick={savePrefs}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"

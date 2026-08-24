@@ -3,7 +3,7 @@
  *
  * Given a common ancestor (`base`) and two diverged states (`local`,
  * `remote`), produce a merged result. Returns both the merged data and
- * a list of human-readable conflicts for the resolution modal.
+ * a list of conflicts detected during the merge.
  *
  * RULES
  * -----
@@ -27,10 +27,10 @@
  * Conflicts are reported base-aware: only when BOTH sides changed the same
  * field/key since the last sync and settled on different values. Additive
  * differences (e.g. different boxes checked on each device) merge silently —
- * the "conflict" modal only appears for genuinely ambiguous edits. When
- * `base` is null (first sync, or a field new since the last sync) the merge
- * degrades to best-effort: any divergence is reported, since there is no
- * common ancestor to disambiguate against.
+ * the merge only reports genuinely ambiguous edits. When `base` is null
+ * (first sync, or a field new since the last sync) the merge degrades to
+ * best-effort: any divergence is reported, since there is no common ancestor
+ * to disambiguate against.
  *
  * Everything else (timers, current phase card open state, UI flags)
  * is device-local and never enters the merge.
@@ -537,47 +537,17 @@ export function threeWayMerge(
 
   return { merged, conflicts };
 }
-// ---------------------------------------------------------------------------
-// Conflict resolution by user preference
-// ---------------------------------------------------------------------------
 
-/** How a conflict was resolved: keep local, take remote, or fork both. */
-export type ConflictResolution = 'local' | 'remote' | 'merge';
+// ---------------------------------------------------------------------------
+// Sync merge: cloud wins on conflict
+// ---------------------------------------------------------------------------
 
 /**
- * Apply a conflict resolution to a (local, remote) pair.
- *
- * • 'local'  → local state wins untouched
- * • 'remote' → remote state adopted untouched
- * • 'merge'  → keep local as-is and fork every remote-only custom plan under
- *   a new id with a " (cloud)" suffix so nothing from either side is lost
- *   (git-style "keep both").
+ * Merge for sync: preserve the rich three-way merge for non-conflicting
+ * changes, but when genuine conflicts are detected, let the cloud snapshot
+ * win (no user prompt). Returns the state to adopt locally and push back.
  */
-export function resolveWithPreference(
-  resolution: ConflictResolution,
-  local: AppData,
-  remote: AppData
-): AppData {
-  switch (resolution) {
-    case 'local':
-      return local;
-    case 'remote':
-      return remote;
-    case 'merge': {
-      const remoteOnlyPlans = remote.customPlans.filter(
-        (rp) => !local.customPlans.some((lp) => lp.id === rp.id)
-      );
-      const forked = remoteOnlyPlans.map((p) => ({
-        ...p,
-        id: `${p.id}-fork-${Date.now()}`,
-        name: `${p.name} (cloud)`,
-        lastModifiedAt: Date.now()
-      }));
-      return {
-        ...local,
-        customPlans: [...local.customPlans, ...forked],
-        lastModifiedAt: Date.now()
-      };
-    }
-  }
+export function syncMerge(base: AppData | null, local: AppData, remote: AppData): AppData {
+  const { merged, conflicts } = threeWayMerge(base, local, remote);
+  return conflicts.length === 0 ? merged : remote;
 }

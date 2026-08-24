@@ -64,9 +64,7 @@ const InstallGuideModal = lazy(() =>
 const AuthModal = lazy(() =>
   import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
 );
-const ConflictModal = lazy(() =>
-  import('./components/ConflictModal').then((m) => ({ default: m.ConflictModal }))
-);
+
 const PlanEditorModal = lazy(() =>
   import('./components/PlanEditorModal').then((m) => ({ default: m.PlanEditorModal }))
 );
@@ -88,7 +86,7 @@ export default function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
 
   // Cross-device sync engine.
-  const { pendingConflicts, resolveConflicts, syncing, lastSyncedAt, pushNow, syncedData } = useSync();
+  const { syncing, lastSyncedAt, pushNow, syncedData } = useSync();
   // Honest sync status for the account menu indicator.
   const syncStatus = { syncing, lastSyncedAt };
   // Flush pending local changes to the cloud BEFORE the session is torn down
@@ -990,13 +988,6 @@ export default function App() {
 
         {showAuthModal && (
           <AuthModal onClose={() => setShowAuthModal(false)} />
-        )}
-
-        {pendingConflicts && pendingConflicts.length > 0 && (
-          <ConflictModal
-            conflicts={pendingConflicts}
-            onResolve={resolveConflicts}
-          />
         )}
 
         {editorState && (
