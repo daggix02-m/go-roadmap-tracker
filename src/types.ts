@@ -71,6 +71,49 @@ export interface AppSettings {
   timezone?: string;
   /** Per-user daily study-minute goal shown in the stats graph. */
   dailyFocusGoal?: number;
+  /** Global color theme preset; absent = Midnight (the built-in dark). */
+  theme?: ThemeId;
+  /** Home page layout preset; absent = Dashboard. */
+  layout?: LayoutPreset;
+  /** Which activity widget shows on the home page; absent = contribution grid. */
+  homeWidget?: HomeWidgetId;
+}
+
+// ---------------------------------------------------------------------------
+// Appearance customization (themes / layouts / home widgets)
+// ---------------------------------------------------------------------------
+
+/** Canonical theme id list — order drives picker UI ordering. */
+export const THEME_IDS = ['midnight', 'daylight', 'nord', 'dracula'] as const;
+export type ThemeId = (typeof THEME_IDS)[number];
+
+export const LAYOUT_IDS = ['dashboard', 'focus', 'minimal'] as const;
+export type LayoutPreset = (typeof LAYOUT_IDS)[number];
+
+export const HOME_WIDGET_IDS = ['contribution', 'calendar', 'bars', 'ring', 'tiles'] as const;
+export type HomeWidgetId = (typeof HOME_WIDGET_IDS)[number];
+
+// ---------------------------------------------------------------------------
+// Daily quests — recurring day routines with XP
+// ---------------------------------------------------------------------------
+
+export interface Quest {
+  id: string;
+  title: string;
+  emoji?: string;
+  /** Optional minutes target — auto-completed when enough focus time is logged that day. */
+  targetMinutes?: number;
+  enabled: boolean;
+  createdAt: number;
+  /** Bumped on every edit so cross-device merges can resolve LWW per quest. */
+  updatedAt?: number;
+}
+
+export interface QuestState {
+  items: Quest[];
+  /** questId -> local day ('YYYY-MM-DD') -> true for each completed day. */
+  completions: Record<string, Record<string, boolean>>;
+  xp: number;
 }
 
 /** Streak/history shared across all plans. */
@@ -93,6 +136,8 @@ export interface AppData {
   settings: AppSettings;
   global: GlobalActivity;
   progressByPlan: Record<string, PlanProgress>;
+  /** Daily quests (routines) + XP. Absent = user has never used quests. */
+  quests?: QuestState;
   /** Epoch-ms timestamp for three-way merge LWW resolution. */
   lastModifiedAt?: number;
 }

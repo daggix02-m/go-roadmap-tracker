@@ -4,12 +4,15 @@ import { NotificationBanner } from './components/NotificationBanner';
 import { FilterBar } from './components/FilterBar';
 import { PhaseCard } from './components/PhaseCard';
 import { DailyFocusBar } from './components/DailyFocusBar';
-import { AppData, AppSettings, FilterState, Plan, PlanProgress, SECTION_FILTER_PREFIX } from './types';
+import { AppData, AppSettings, FilterState, Plan, PlanProgress, Quest, SECTION_FILTER_PREFIX } from './types';
 import {
   loadAppData,
   saveAppData,
   logStudyActivity,
   emptyPlanProgress,
+  emptyQuestState,
+  syncMinuteQuests,
+  toggleQuestCompletion,
   getLocalDateString
 } from './utils/storage';
 import { BUILT_IN_PLANS, deleteCustomPlan, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
@@ -35,9 +38,11 @@ import {
   formatCountdown
 } from './utils/timerEngine';
 import { PlanSwitcher } from './components/PlanSwitcher';
-import { ContributionGraph } from './components/ContributionGraph';
+import { HomeWidgetCard } from './components/HomeWidgets/WidgetSwitcher';
+import { DailyQuests } from './components/DailyQuests';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 import { useSync } from './utils/useSync';
+import { THEME_CHROME_COLOR } from './utils/themes';
 
 // Heavy modals are lazy-loaded so they don't ship in the initial bundle.
 // They only render after the user opens them (stats, timer, cheatsheet, etc.).
@@ -155,6 +160,20 @@ export default function App() {
         : baseTitle;
   }, [timersBlob.focus, nowMs, baseTitle]);
 
+  // Theme + layout presets: swap CSS variable sets on <html> and keep the
+  // PWA status-bar color in step with the active theme.
+  const activeTheme = appData.settings.theme ?? 'midnight';
+  useEffect(() => {
+    document.documentElement.dataset.theme = activeTheme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute('content', THEME_CHROME_COLOR[activeTheme]);
+  }, [activeTheme]);
+
+  useEffect(() => {
+    document.documentElement.dataset.layout = appData.settings.layout ?? 'dashboard';
+  }, [appData.settings.layout]);
+
   // Open the active card by default on first load
   useEffect(() => {
     if (activePhase) setOpenCardId((prev) => prev ?? activePhase.id);
@@ -208,6 +227,80 @@ export default function App() {
 
   const handleUpdateSettings = useCallback((updater: (prev: AppSettings) => AppSettings) => {
     handleUpdateData((prev) => ({ ...prev, settings: updater(prev.settings) }));
+  }, [handleUpdateData]);
+
+  // --- Daily quests ---------------------------------------------------------
+
+  /** After study minutes land, auto-complete any minute-target quests for today. */
+  const withQuestSync = useCallback((data: AppData): AppData => {
+    const q = data.quests;
+    if (!q || q.items.length === 0) return data;
+    const day = getLocalDateString();
+    return {
+      ...data,
+      quests: syncMinuteQuests(q, data.global.historyMinutes[day] ?? 0, day, {
+        enabledQuestCount: q.items.filter((i) => i.enabled).length
+      })
+    };
+  }, []);
+
+  const handleToggleQuest = useCallback((questId: string) => {
+    handleUpdateData((prev) => {
+      const q = prev.quests ?? emptyQuestState();
+      return {
+        ...prev,
+        quests: toggleQuestCompletion(q, questId, getLocalDateString(), {
+          enabledQuestCount: q.items.filter((i) => i.enabled).length
+        })
+      };
+    });
+  }, [handleUpdateData]);
+
+  /** Creates a new quest or applies an edit patch when the id already exists. */
+  const handleUpsertQuest = useCallback((quest: Quest) => {
+    handleUpdateData((prev) => {
+      const q = prev.quests ?? emptyQuestState();
+      const items = q.items.some((i) => i.id === quest.id)
+        ? q.items.map((i) => (i.id === quest.id ? quest : i))
+        : [...q.items, quest];
+      return { ...prev, quests: { ...q, items } };
+    });
+  }, [handleUpdateData]);
+
+  const handleDeleteQuest = useCallback((questId: string) => {
+    handleUpdateData((prev) => {
+      const q = prev.quests ?? emptyQuestState();
+      const completions = { ...q.completions };
+      delete completions[questId];
+      return {
+        ...prev,
+        quests: { ...q, items: q.items.filter((i) => i.id !== questId), completions }
+      };
+    });
+  }, [handleUpdateData]);
+
+  /** One-tap showcase: Nord theme + Focus layout + goal ring (+ template quests when none exist). */
+  const handleApplyDemoSetup = useCallback(() => {
+    handleUpdateData((prev) => {
+      let quests = prev.quests ?? emptyQuestState();
+      if (quests.items.length === 0) {
+        const base = Date.now();
+        quests = {
+          ...emptyQuestState(),
+          items: [
+            { id: 'demo_q_review', title: 'Review yesterday', emoji: '🔁', targetMinutes: 15, enabled: true, createdAt: base },
+            { id: 'demo_q_docs', title: 'Read documentation', emoji: '📖', targetMinutes: 20, enabled: true, createdAt: base + 1 },
+            { id: 'demo_q_practice', title: 'Practice problems', emoji: '🧩', targetMinutes: 30, enabled: true, createdAt: base + 2 },
+            { id: 'demo_q_cards', title: 'Flashcards', emoji: '🃏', targetMinutes: 10, enabled: true, createdAt: base + 3 }
+          ]
+        };
+      }
+      return {
+        ...prev,
+        quests,
+        settings: { ...prev.settings, theme: 'nord', layout: 'focus', homeWidget: 'ring' }
+      };
+    });
   }, [handleUpdateData]);
 
   /** Mutates only the active plan's progress object. */
@@ -285,7 +378,9 @@ export default function App() {
 
   const handleLogStudySession = (minutes: number) => {
     if (!activePhase) return;
-    handleStateReload(logStudyActivity(appData, activePlan.id, activePhase.id, minutes));
+    handleStateReload(
+      withQuestSync(logStudyActivity(appData, activePlan.id, activePhase.id, minutes))
+    );
   };
 
   // --- Focus timer control (state lives here so it outlives the modal) -----
@@ -398,7 +493,7 @@ export default function App() {
         minutes
       );
       handleUpdateData((prev) =>
-        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
+        withQuestSync(logStudyActivity(prev, activePlan.id, activePhase.id, minutes))
       );
     }
     // Frozen at zero ("Done") until a new preset or Stop is chosen.
@@ -423,7 +518,7 @@ export default function App() {
     if ((f.variant ?? 'study') === 'study' && activePhase) {
       const minutes = Math.max(1, Math.round(f.durationSec / 60));
       handleUpdateData((prev) =>
-        logStudyActivity(prev, activePlan.id, activePhase.id, minutes)
+        withQuestSync(logStudyActivity(prev, activePlan.id, activePhase.id, minutes))
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -704,16 +799,37 @@ export default function App() {
         completedCount={progress.completedPhases.length}
       />
 
-      <main className="max-w-3xl lg:max-w-5xl mx-auto px-4 pt-4 space-y-3">
-        {/* Widget-style overview */}
-        <ContributionGraph historyMinutes={appData.global.historyMinutes} />
+      <main className="home-main max-w-3xl lg:max-w-5xl mx-auto px-4 pt-4 space-y-3">
+        {/* Widget-style overview — user-selectable activity widget */}
+        <HomeWidgetCard
+          widget={appData.settings.homeWidget ?? 'contribution'}
+          data={{
+            historyMinutes: appData.global.historyMinutes,
+            dailyFocusGoal: appData.settings.dailyFocusGoal,
+            streak: appData.global.streak,
+            completedPhases: progress.completedPhases.length,
+            totalPhases: activePlan.phases.length,
+            totalStudyMinutes: appData.global.totalStudyMinutes,
+            planAccent: activePlan.accent
+          }}
+          onChangeWidget={(id) => handleUpdateSettings((prev) => ({ ...prev, homeWidget: id }))}
+        />
+
+        {/* Daily routines + XP */}
+        <DailyQuests
+          quests={appData.quests ?? emptyQuestState()}
+          day={getLocalDateString()}
+          onToggleQuest={handleToggleQuest}
+          onAddQuest={handleUpsertQuest}
+          onDeleteQuest={handleDeleteQuest}
+        />
 
         {/* Intro: the method */}
         {activePlan.method &&
           filter.section === 'ALL' &&
           !filter.searchQuery &&
           filteredPhases.length > 0 && (
-            <section className="rounded-lg border border-line bg-surface p-4 sm:p-5">
+            <section className="method-card rounded-lg border border-line bg-surface p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-text">One app, learned by building it</h2>
               <p className="mt-1.5 text-[13px] leading-relaxed text-muted">{activePlan.method}</p>
               {activePlan.principle && activePlan.principle.length > 0 && (
@@ -749,7 +865,7 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
+          <div className="phase-grid">
             {filteredPhases.map((phase) => {
               // Only the card owning the active step timer needs the live clock.
               // Everyone else gets a frozen value so React.memo can skip re-renders
@@ -870,6 +986,7 @@ export default function App() {
             appData={appData}
             onClose={() => setShowSettingsModal(false)}
             onOpenAuthModal={() => setShowAuthModal(true)}
+            onApplyDemoSetup={handleApplyDemoSetup}
           />
         )}
       </Suspense>

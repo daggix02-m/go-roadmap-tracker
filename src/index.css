@@ -1,24 +1,33 @@
 @import 'tailwindcss';
 
-@theme {
-  /* Geist dark palette */
-  --color-page: #000000;
-  --color-surface: #0a0a0a;
-  --color-raised: #141414;
-  --color-hover: #1a1a1a;
+/* ---------------------------------------------------------------------------
+ * Theme engine
+ *
+ * Utilities (bg-page, text-muted, …) compile against the --t-* variables via
+ * @theme inline, so swapping [data-theme] on <html> recolors the whole app at
+ * runtime. Every preset defines the complete token set; Midnight is the root
+ * default. Opacity modifiers (bg-line/40 etc.) keep working because Tailwind
+ * v4 lowers them to color-mix() over the live variable.
+ * ------------------------------------------------------------------------- */
 
-  --color-line: #262626;
-  --color-line-strong: #404040;
+@theme inline {
+  --color-page: var(--t-page);
+  --color-surface: var(--t-surface);
+  --color-raised: var(--t-raised);
+  --color-hover: var(--t-hover);
 
-  --color-text: #ededed;
-  --color-muted: #8f8f8f;
-  --color-faint: #666666;
+  --color-line: var(--t-line);
+  --color-line-strong: var(--t-line-strong);
 
-  --color-accent: #3291ff;
-  --color-accent-strong: #0070f3;
-  --color-success: #2ea36b;
-  --color-warning: #f5a623;
-  --color-danger: #e5484d;
+  --color-text: var(--t-text);
+  --color-muted: var(--t-muted);
+  --color-faint: var(--t-faint);
+
+  --color-accent: var(--t-accent);
+  --color-accent-strong: var(--t-accent-strong);
+  --color-success: var(--t-success);
+  --color-warning: var(--t-warning);
+  --color-danger: var(--t-danger);
 
   --font-sans: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
@@ -26,47 +35,148 @@
     'Liberation Mono', monospace;
 }
 
+/* Midnight — the incumbent Geist dark palette */
+:root,
+[data-theme='midnight'] {
+  --t-page: #000000;
+  --t-surface: #0a0a0a;
+  --t-raised: #141414;
+  --t-hover: #1a1a1a;
+
+  --t-line: #262626;
+  --t-line-strong: #404040;
+
+  --t-text: #ededed;
+  --t-muted: #8f8f8f;
+  --t-faint: #666666;
+
+  --t-accent: #3291ff;
+  --t-accent-strong: #0070f3;
+  --t-success: #2ea36b;
+  --t-warning: #f5a623;
+  --t-danger: #e5484d;
+
+  --t-selection-bg: rgba(50, 145, 255, 0.35);
+  --t-selection-text: #ffffff;
+  --t-scrim: rgba(0, 0, 0, 0.7);
+}
+
+/* Daylight — quiet paper light mode; accents deepen for contrast */
+[data-theme='daylight'] {
+  --t-page: #f7f7f8;
+  --t-surface: #ffffff;
+  --t-raised: #f1f1f3;
+  --t-hover: #e9e9ec;
+
+  --t-line: #e4e4e7;
+  --t-line-strong: #cfd0d6;
+
+  --t-text: #1b1b1f;
+  --t-muted: #71717a;
+  --t-faint: #75757e;
+
+  --t-accent: #0069db;
+  --t-accent-strong: #005bbd;
+  --t-success: #17803d;
+  --t-warning: #b45309;
+  --t-danger: #d92d20;
+
+  --t-selection-bg: rgba(0, 105, 219, 0.18);
+  --t-selection-text: inherit;
+  --t-scrim: rgba(24, 24, 27, 0.45);
+}
+
+/* Nord — polar-night blues with frost accent */
+[data-theme='nord'] {
+  --t-page: #2e3440;
+  --t-surface: #353c4a;
+  --t-raised: #3b4252;
+  --t-hover: #434c5e;
+
+  --t-line: #4a5468;
+  --t-line-strong: #616b80;
+
+  --t-text: #eceff4;
+  --t-muted: #aeb8c9;
+  --t-faint: #7f889b;
+
+  --t-accent: #88c0d0;
+  --t-accent-strong: #64aec3;
+  --t-success: #a3be8c;
+  --t-warning: #ebcb8b;
+  --t-danger: #bf616a;
+
+  --t-selection-bg: rgba(136, 192, 208, 0.32);
+  --t-selection-text: #2e3440;
+  --t-scrim: rgba(46, 52, 64, 0.72);
+}
+
+/* Dracula — purple night, neon accents tamed one step for text use */
+[data-theme='dracula'] {
+  --t-page: #21222c;
+  --t-surface: #282a36;
+  --t-raised: #2f3141;
+  --t-hover: #3a3d52;
+
+  --t-line: #44475a;
+  --t-line-strong: #5b5f7a;
+
+  --t-text: #f8f8f2;
+  --t-muted: #a4a8bf;
+  --t-faint: #74779a;
+
+  --t-accent: #bd93f9;
+  --t-accent-strong: #a685ea;
+  --t-success: #43d97e;
+  --t-warning: #ffb86c;
+  --t-danger: #ff5555;
+
+  --t-selection-bg: rgba(189, 147, 249, 0.35);
+  --t-selection-text: #f8f8f2;
+  --t-scrim: rgba(15, 15, 20, 0.72);
+}
+
 html {
   scroll-behavior: smooth;
   -webkit-tap-highlight-color: transparent;
-  background-color: var(--color-page);
+  background-color: var(--t-page);
 }
 
 body {
   font-family: var(--font-sans);
-  background-color: var(--color-page);
-  color: var(--color-text);
+  background-color: var(--t-page);
+  color: var(--t-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 ::selection {
-  background-color: rgba(50, 145, 255, 0.35);
-  color: #ffffff;
+  background-color: var(--t-selection-bg);
+  color: var(--t-selection-text);
 }
 
 /* Accessible keyboard focus everywhere */
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--t-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 input[type='checkbox'] {
-  accent-color: var(--color-accent);
+  accent-color: var(--t-accent);
 }
 
 /* Thin, quiet scrollbars */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-line) transparent;
+  scrollbar-color: var(--t-line) transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: var(--color-line);
+  background: var(--t-line);
   border-radius: 3px;
 }
 *::-webkit-scrollbar-track {
@@ -86,6 +196,11 @@ input[type='checkbox'] {
   padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
 }
 
+/* Modal scrims follow the theme's scrim token */
+.theme-scrim {
+  background-color: var(--t-scrim);
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -99,6 +214,45 @@ input[type='checkbox'] {
 
 .animate-fade-in {
   animation: fade-in 0.15s ease-out forwards;
+}
+
+/* ---------------------------------------------------------------------------
+ * Layout presets — structural customization driven by [data-layout] on <html>
+ *
+ *   dashboard (default)  two-column phase grid on xl, everything visible
+ *   focus                single narrow column, method card hidden
+ *   minimal              single narrow column, widgets + method hidden,
+ *                        tighter rhythm
+ * ------------------------------------------------------------------------- */
+
+.phase-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+@media (min-width: 1280px) {
+  [data-layout='dashboard'] .phase-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Focus & Minimal share a narrower reading measure */
+[data-layout='focus'] main.home-main,
+[data-layout='minimal'] main.home-main {
+  max-width: 48rem;
+  margin-inline: auto;
+}
+
+[data-layout='focus'] .method-card,
+[data-layout='minimal'] .method-card,
+[data-layout='minimal'] .home-widget-slot {
+  display: none;
+}
+
+[data-layout='minimal'] .phase-grid {
+  gap: 0.5rem;
 }
 
 @media (prefers-reduced-motion: reduce) {

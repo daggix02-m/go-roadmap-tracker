@@ -1,4 +1,15 @@
-import { AppData, AppSettings, GlobalActivity, PlanProgress } from '../types';
+import {
+  AppData,
+  AppSettings,
+  GlobalActivity,
+  PlanProgress,
+  Quest,
+  QuestState,
+  HOME_WIDGET_IDS,
+  LAYOUT_IDS,
+  THEME_IDS
+} from '../types';
+import { DEMO_PLAN, DEMO_PLAN_ID } from '../data/plans/demo';
 
 /** Legacy single-plan key — kept as the read-only migration source. */
 const LEGACY_STORAGE_KEY = 'go_backend_roadmap_tracker_v1';
@@ -54,11 +65,105 @@ export function emptyPlanProgress(): PlanProgress {
   return { ...EMPTY_PLAN_PROGRESS, completedPhases: [] };
 }
 
-function defaultAppData(): AppData {
+// ---------------------------------------------------------------------------
+// Daily quests — XP economy
+// ---------------------------------------------------------------------------
+
+export const QUEST_XP_PER_COMPLETION = 10;
+export const QUEST_ALL_DONE_BONUS_XP = 25;
+
+/** Quadratic level curve: L1 at 0 XP, L2 at 100, L3 at 400, Ln at (L-1)²·100. */
+export function xpForLevel(level: number): number {
+  const l = Math.max(1, Math.floor(level));
+  return (l - 1) * (l - 1) * 100;
+}
+
+export function levelFromXp(xp: number): number {
+  if (!Number.isFinite(xp) || xp <= 0) return 1;
+  return Math.floor(Math.sqrt(xp / 100)) + 1;
+}
+
+export function emptyQuestState(): QuestState {
+  return { items: [], completions: {}, xp: 0 };
+}
+
+/**
+ * Toggles one quest's completion for `day` and keeps the XP ledger honest:
+ * +10 per completion, +25 bonus the moment every enabled quest is done,
+ * with exact refunds on un-toggle and a floor of zero.
+ */
+export function toggleQuestCompletion(
+  state: QuestState,
+  questId: string,
+  day: string,
+  opts: { enabledQuestCount: number }
+): QuestState {
+  const doneOn = (completions: QuestState['completions'], qid: string) =>
+    completions[qid]?.[day] === true;
+
+  /** True when every enabled quest is complete once `questIdDone` holds. */
+  const allEnabledDone = (questIdDone: boolean): boolean => {
+    if (opts.enabledQuestCount <= 0) return false;
+    const enabled = state.items.filter((q) => q.enabled);
+    const othersDone = enabled.every((q) => q.id === questId || doneOn(state.completions, q.id));
+    const thisOneOk = !enabled.some((q) => q.id === questId) || questIdDone;
+    return othersDone && thisOneOk;
+  };
+
+  const wasDone = doneOn(state.completions, questId);
+  const completions: QuestState['completions'] = { ...state.completions };
+
+  let delta = 0;
+  if (wasDone) {
+    const days = { ...(completions[questId] ?? {}) };
+    delete days[day];
+    if (Object.keys(days).length === 0) delete completions[questId];
+    else completions[questId] = days;
+    delta -= QUEST_XP_PER_COMPLETION;
+    // The set WAS complete before this un-toggle — claw back the bonus too.
+    if (allEnabledDone(true)) delta -= QUEST_ALL_DONE_BONUS_XP;
+  } else {
+    completions[questId] = { ...(completions[questId] ?? {}), [day]: true };
+    delta += QUEST_XP_PER_COMPLETION;
+    if (allEnabledDone(true)) delta += QUEST_ALL_DONE_BONUS_XP;
+  }
+
+  return {
+    ...state,
+    completions,
+    xp: Math.max(0, state.xp + delta)
+  };
+}
+
+/**
+ * Marks enabled minute-target quests complete for `day` once enough focus
+ * time has been logged. Pure and idempotent — safe to run after every study
+ * log. Note: un-checking an auto-completed quest is temporary; the next
+ * study log that still meets the target marks it again.
+ */
+export function syncMinuteQuests(
+  state: QuestState,
+  todayMinutes: number,
+  day: string,
+  opts: { enabledQuestCount: number }
+): QuestState {
+  let next = state;
+  for (const q of state.items) {
+    if (!q.enabled || !q.targetMinutes || q.targetMinutes <= 0) continue;
+    if (todayMinutes < q.targetMinutes) continue;
+    if (next.completions[q.id]?.[day]) continue;
+    next = toggleQuestCompletion(next, q.id, day, opts);
+  }
+  return next;
+}
+
+export function defaultAppData(): AppData {
   return {
     version: 2,
     activePlanId: 'go-roadmap',
-    customPlans: [],
+    // The showcase plan ships as an ordinary custom plan: editable, forkable,
+    // and deletable through the normal tombstone flow.
+    customPlans: [{ ...DEMO_PLAN }],
     settings: {
       dailyReminderEnabled: false,
       dailyReminderTime: '09:00',
@@ -84,11 +189,61 @@ function sanitizeRecord<T>(
   return out;
 }
 
+/** Sanitizes the persisted quests blob; absent input stays absent. */
+function sanitizeQuestState(value: unknown): QuestState | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Partial<QuestState>;
+
+  const items: Quest[] = [];
+  if (Array.isArray(raw.items)) {
+    for (const q of raw.items) {
+      if (!q || typeof q !== 'object') continue;
+      if (typeof q.id !== 'string' || !q.id) continue;
+      if (typeof q.title !== 'string' || !q.title) continue;
+      const item: Quest = {
+        id: q.id,
+        title: q.title,
+        enabled: Boolean(q.enabled),
+        createdAt:
+          typeof q.createdAt === 'number' && Number.isFinite(q.createdAt) ? q.createdAt : 0
+      };
+      if (typeof q.emoji === 'string' && q.emoji) item.emoji = q.emoji;
+      if (
+        typeof q.targetMinutes === 'number' &&
+        Number.isFinite(q.targetMinutes) &&
+        q.targetMinutes > 0
+      ) {
+        item.targetMinutes = Math.round(q.targetMinutes);
+      }
+      if (typeof q.updatedAt === 'number' && Number.isFinite(q.updatedAt)) {
+        item.updatedAt = q.updatedAt;
+      }
+      items.push(item);
+    }
+  }
+
+  const completions: QuestState['completions'] = {};
+  if (raw.completions && typeof raw.completions === 'object') {
+    for (const [questId, days] of Object.entries(raw.completions)) {
+      if (!questId || !days || typeof days !== 'object') continue;
+      completions[questId] = sanitizeRecord<boolean>(days, (v) => v === true);
+    }
+  }
+
+  return {
+    items,
+    completions,
+    xp:
+      typeof raw.xp === 'number' && Number.isFinite(raw.xp) && raw.xp > 0
+        ? Math.floor(raw.xp)
+        : 0
+  };
+}
+
 /** Defensive merge of parsed JSON into a complete AppData. */
 export function normalizeAppData(parsed: Partial<AppData> | null | undefined): AppData {
   const base = defaultAppData();
   if (!parsed || typeof parsed !== 'object') return base;
-
   const settings: AppSettings = {
     dailyReminderEnabled: Boolean(parsed.settings?.dailyReminderEnabled),
     dailyReminderTime:
@@ -113,6 +268,17 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
     parsed.settings.dailyFocusGoal > 0
   ) {
     settings.dailyFocusGoal = Math.round(parsed.settings.dailyFocusGoal);
+  }
+  // Appearance settings: only materialize recognized values (same sync-echo
+  // discipline as timezone above — absent keys must stay absent).
+  if (parsed.settings?.theme && THEME_IDS.includes(parsed.settings.theme)) {
+    settings.theme = parsed.settings.theme;
+  }
+  if (parsed.settings?.layout && LAYOUT_IDS.includes(parsed.settings.layout)) {
+    settings.layout = parsed.settings.layout;
+  }
+  if (parsed.settings?.homeWidget && HOME_WIDGET_IDS.includes(parsed.settings.homeWidget)) {
+    settings.homeWidget = parsed.settings.homeWidget;
   }
 
   const global = { ...base.global };
@@ -152,15 +318,26 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
     }
   }
 
+  const customPlans = Array.isArray(parsed.customPlans) ? [...parsed.customPlans] : [];
+  // Seed the demo showcase plan only when there is no trace of it — a
+  // tombstone (deleted: true) means the user removed it deliberately and it
+  // must never come back here or via sync.
+  if (!customPlans.some((p) => p && typeof p === 'object' && p.id === DEMO_PLAN_ID)) {
+    customPlans.push({ ...DEMO_PLAN });
+  }
+
+  const quests = sanitizeQuestState(parsed.quests);
+
   return {
     version: 2,
     activePlanId: typeof parsed.activePlanId === 'string' ? parsed.activePlanId : base.activePlanId,
     activePlanUpdatedAt:
       typeof parsed.activePlanUpdatedAt === 'number' ? parsed.activePlanUpdatedAt : undefined,
-    customPlans: Array.isArray(parsed.customPlans) ? parsed.customPlans : [],
+    customPlans,
     settings,
     global,
     progressByPlan,
+    ...(quests ? { quests } : {}),
     lastModifiedAt:
       typeof parsed.lastModifiedAt === 'number' ? parsed.lastModifiedAt : undefined
   };

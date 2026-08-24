@@ -38,7 +38,7 @@
  * @module
  */
 
-import { AppData, PlanProgress, Plan, GlobalActivity } from '../types';
+import { AppData, PlanProgress, Plan, GlobalActivity, Quest, QuestState } from '../types';
 
 // ---------------------------------------------------------------------------
 // Canonical serialization
@@ -211,6 +211,48 @@ function stringRecordLWW(
 /** Pick whichever value has the higher timestamp. */
 function lww<T>(local: T, remote: T, localTs?: number, remoteTs?: number): T {
   return (remoteTs ?? 0) > (localTs ?? 0) ? remote : local;
+}
+
+/**
+ * Merge quest state: items union by id (newer `updatedAt` wins per quest),
+ * completions are true-wins (a check on any device sticks), xp is
+ * best-of-both. A side without quests at all (old client / fresh account)
+ * degrades to the populated side.
+ */
+function mergeQuests(
+  local: QuestState | undefined,
+  remote: QuestState | undefined
+): QuestState | undefined {
+  if (!local && !remote) return undefined;
+  const l = local ?? { items: [], completions: {}, xp: 0 };
+  const r = remote ?? { items: [], completions: {}, xp: 0 };
+
+  const byId = new Map<string, Quest>();
+  for (const q of l.items) byId.set(q.id, { ...q });
+  for (const rq of r.items) {
+    const lq = byId.get(rq.id);
+    if (!lq || ((rq.updatedAt ?? rq.createdAt ?? 0) > (lq.updatedAt ?? lq.createdAt ?? 0))) {
+      byId.set(rq.id, { ...rq });
+    }
+  }
+
+  // True-wins union of the nested day records.
+  const completions: QuestState['completions'] = {};
+  const sides = [l.completions, r.completions];
+  for (const side of sides) {
+    for (const [questId, days] of Object.entries(side)) {
+      completions[questId] = { ...(completions[questId] ?? {}) };
+      for (const [day, done] of Object.entries(days)) {
+        if (done) completions[questId][day] = true;
+      }
+    }
+  }
+
+  return {
+    items: [...byId.values()],
+    completions,
+    xp: Math.max(l.xp, r.xp)
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +498,9 @@ export function threeWayMerge(
   // --- active plan ---
   const activePlanId = lww(local.activePlanId, remote.activePlanId, local.activePlanUpdatedAt, remote.activePlanUpdatedAt);
 
+  // --- daily quests ---
+  const quests = mergeQuests(local.quests, remote.quests);
+
   const merged: AppData = {
     version: 2,
     activePlanId,
@@ -464,6 +509,7 @@ export function threeWayMerge(
     settings,
     global: globalActivity,
     progressByPlan,
+    ...(quests ? { quests } : {}),
     lastModifiedAt: Math.max(local.lastModifiedAt ?? 0, remote.lastModifiedAt ?? 0)
   };
 

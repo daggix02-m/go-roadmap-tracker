@@ -136,6 +136,17 @@ export const Header: React.FC<HeaderProps> = ({
                   <Download className="w-4 h-4" />
                 </button>
               )}
+
+              {/* Always reachable — Appearance/theme controls work signed out */}
+              <button
+                id="header-settings-btn"
+                onClick={onOpenSettings}
+                className={iconButtonClass}
+                title="Settings & appearance"
+                aria-label="Open settings"
+              >
+                <Settings className="w-4 h-4" />
+              </button>
             </div>
 
             {/* Mobile: overflow menu */}

@@ -176,7 +176,11 @@ describe('normalizeAppData', () => {
     assert.equal(a.version, 2);
     assert.equal(a.activePlanId, 'go-roadmap');
     assert.equal(a.global.streak, 0);
-    assert.deepEqual(a.customPlans, []);
+    assert.deepEqual(
+      a.customPlans.map((p) => p.id),
+      ['demo-showcase'],
+      'fresh state ships with only the demo showcase plan'
+    );
     const b = normalizeAppData({ version: 2, settings: 'garbage' } as unknown as Partial<AppData>);
     assert.equal(b.settings.timeFormat, '12h');
   });

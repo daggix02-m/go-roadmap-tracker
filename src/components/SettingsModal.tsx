@@ -15,9 +15,11 @@ import {
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
-import { AppData, AppSettings } from '../types';
+import { AppData, AppSettings, HomeWidgetId } from '../types';
 import { exportAppDataAsJSON } from '../utils/storage';
 import { authErrorMessage } from '../utils/authErrors';
+import { THEMES } from '../utils/themes';
+import { WIDGET_META, WIDGET_ORDER } from './HomeWidgets/WidgetSwitcher';
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -26,7 +28,27 @@ interface SettingsModalProps {
   onClose: () => void;
   /** Opens the sign-in/sign-up modal (used by the signed-out state). */
   onOpenAuthModal: () => void;
+  /** One-tap showcase: demo theme + layout + widget (+ template quests when none exist). */
+  onApplyDemoSetup?: () => void;
 }
+
+const LAYOUT_META = [
+  {
+    id: 'dashboard' as const,
+    label: 'Dashboard',
+    blurb: 'Two-column grid, everything visible'
+  },
+  {
+    id: 'focus' as const,
+    label: 'Focus',
+    blurb: 'Single narrow column, no intro card'
+  },
+  {
+    id: 'minimal' as const,
+    label: 'Minimal',
+    blurb: 'Tight list — roadmap only'
+  }
+];
 
 const FALLBACK_TIMEZONES = [
   'UTC',
@@ -66,7 +88,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   appData,
   onClose,
-  onOpenAuthModal
+  onOpenAuthModal,
+  onApplyDemoSetup
 }) => {
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -274,7 +297,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 theme-scrim animate-fade-in"
       onClick={onClose}
     >
       <div
@@ -549,6 +572,148 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </section>
             </>
           )}
+
+          {/* Appearance — local-only, instant-apply, works signed out */}
+          <section className="space-y-4">
+            <h3 className={labelClass}>Appearance</h3>
+
+            {/* Theme */}
+            <div>
+              <p className="text-[11px] text-muted mb-2">Theme</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label="Color theme">
+                {THEMES.map((t) => {
+                  const active = (settings.theme ?? 'midnight') === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => onUpdateSettings((prev) => ({ ...prev, theme: t.id }))}
+                      className={`rounded-lg border p-2.5 text-left transition-colors cursor-pointer ${
+                        active
+                          ? 'border-accent bg-hover'
+                          : 'border-line hover:border-line-strong hover:bg-raised'
+                      }`}
+                    >
+                      <span className="flex gap-1 mb-2" aria-hidden="true">
+                        {t.swatch.map((c, i) => (
+                          <span
+                            key={i}
+                            className={`w-4 h-6 rounded-[4px] border ${i === 0 ? '' : 'border-black/20'}`}
+                            style={{ backgroundColor: c }}
+                          />
+                        ))}
+                      </span>
+                      <span className="block text-xs font-medium text-text">{t.label}</span>
+                      <span className="block text-[10px] text-faint mt-0.5 leading-tight">{t.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Layout */}
+            <div>
+              <p className="text-[11px] text-muted mb-2">Layout</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="radiogroup" aria-label="Layout preset">
+                {LAYOUT_META.map((l) => {
+                  const active = (settings.layout ?? 'dashboard') === l.id;
+                  return (
+                    <button
+                      key={l.id}
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => onUpdateSettings((prev) => ({ ...prev, layout: l.id }))}
+                      className={`flex items-start gap-2.5 rounded-lg border p-2.5 text-left transition-colors cursor-pointer ${
+                        active
+                          ? 'border-accent bg-hover'
+                          : 'border-line hover:border-line-strong hover:bg-raised'
+                      }`}
+                    >
+                      {/* Mini wireframe */}
+                      <span className="shrink-0 w-9 h-9 rounded-md border border-line bg-page p-1 flex flex-col gap-[3px]" aria-hidden="true">
+                        {l.id === 'dashboard' ? (
+                          <>
+                            <span className="flex-1 bg-line-strong/60 rounded-[2px]" />
+                            <span className="flex gap-[3px] flex-1">
+                              <span className="flex-1 bg-line-strong/40 rounded-[2px]" />
+                              <span className="flex-1 bg-line-strong/40 rounded-[2px]" />
+                            </span>
+                          </>
+                        ) : (
+                          <span
+                            className={`flex-1 bg-line-strong/40 rounded-[2px] ${
+                              l.id === 'minimal' ? 'opacity-60' : ''
+                            }`}
+                            style={l.id === 'focus' ? { width: '70%' } : undefined}
+                          />
+                        )}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium text-text">{l.label}</span>
+                        <span className="block text-[10px] text-faint mt-0.5 leading-tight">{l.blurb}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Home widget */}
+            <div>
+              <p className="text-[11px] text-muted mb-2">Activity widget</p>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Home activity widget">
+                {WIDGET_ORDER.map((id: HomeWidgetId) => {
+                  const active = (settings.homeWidget ?? 'contribution') === id;
+                  return (
+                    <button
+                      key={id}
+                      role="radio"
+                      aria-checked={active}
+                      title={WIDGET_META[id].blurb}
+                      onClick={() => onUpdateSettings((prev) => ({ ...prev, homeWidget: id }))}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition-colors cursor-pointer ${
+                        active
+                          ? 'border-accent text-text bg-hover'
+                          : 'border-line text-muted hover:text-text hover:bg-raised'
+                      }`}
+                    >
+                      {WIDGET_META[id].label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Demo setup */}
+            <div className="pt-1">
+              <p className="text-[11px] text-muted mb-2">Try the showcase</p>
+              <div className="flex flex-wrap gap-1.5">
+                {onApplyDemoSetup && (
+                  <button
+                    onClick={onApplyDemoSetup}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+                  >
+                    Apply demo setup
+                  </button>
+                )}
+                <button
+                  onClick={() =>
+                    onUpdateSettings((prev) => {
+                      const next = { ...prev };
+                      delete next.theme;
+                      delete next.layout;
+                      delete next.homeWidget;
+                      return next;
+                    })
+                  }
+                  className="px-3 py-1.5 rounded-md border border-dashed border-line text-xs font-medium text-faint hover:text-muted transition-colors cursor-pointer"
+                >
+                  Reset appearance
+                </button>
+              </div>
+            </div>
+          </section>
 
           {/* Preferences — local-only settings, work even when signed out */}
           <section className="space-y-3">
