@@ -94,6 +94,15 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// Handle SKIP_WAITING messages from the client to force-activate a new SW.
+// When a new SW is in the "waiting" state (stale from previous deployment),
+// the client sends this message to skip the waiting period and activate immediately.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Handle incoming push notifications (from Convex cron).
 self.addEventListener('push', (event) => {
   if (!event.data) return;

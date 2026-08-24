@@ -119,8 +119,14 @@ export default function App() {
   // Register service worker & capture PWA install event
   useEffect(() => {
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(() => {
-        // Offline support unavailable — tracker still works fully online
+      navigator.serviceWorker.register('/sw.js').then((reg) => {
+        console.log('[SW] Registered:', reg.scope);
+        // Check for updates periodically
+        reg.addEventListener('updatefound', () => {
+          console.log('[SW] New version found');
+        });
+      }).catch((err) => {
+        console.error('[SW] Registration failed:', err);
       });
     }
 

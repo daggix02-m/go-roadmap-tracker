@@ -77,31 +77,48 @@ export function usePushSubscription(): PushState & PushActions {
         return;
       }
 
-      // Diagnostic logging — helps identify why PushManager.subscribe() fails.
-      // The "AbortError: push service error" can mean: invalid VAPID keys,
-      // push permission denied, service worker not ready, or push service
-      // unavailable.
-      const perm = 'Notification' in window ? Notification.permission : 'unavailable';
-      const swController = navigator.serviceWorker?.controller;
-      console.log('[Push] Starting subscription attempt', {
-        vapidKeyLength: vapidKey?.length,
-        notificationPermission: perm,
-        swActive: !!swController,
-        swScope: (swController as { scope?: string })?.scope
-      });
-
       setLoading(true);
       try {
         const reg = await navigator.serviceWorker.ready;
 
-        // Ensure the service worker is actually active (not just "ready").
-        // A newly registered SW may be in "installing" or "activating" state.
+        // Diagnostic: log the correct scope from the registration (not the controller)
+        const swController = navigator.serviceWorker?.controller;
+        console.log('[Push] Starting subscription attempt', {
+          vapidKeyLength: vapidKey?.length,
+          notificationPermission: 'Notification' in window ? Notification.permission : 'unavailable',
+          swActive: !!swController,
+          swState: swController?.state ?? 'none',
+          swScope: reg.scope
+        });
+
+        // Ensure the service worker is fully activated before subscribing.
+        // A stale SW in "waiting" state (from previous deployment) can cause
+        // PushManager.subscribe() to fail with AbortError.
+
+        // Case 1: SW is still installing — wait for it to finish
         if (reg.installing) {
           console.warn('[Push] Service worker is still installing — waiting');
           await new Promise<void>((resolve) => {
             reg.installing!.addEventListener('statechange', (e) => {
               if ((e.target as ServiceWorker).state === 'activated') resolve();
             });
+          });
+        }
+
+        // Case 2: Stale SW is waiting — send SKIP_WAITING and wait for new controller
+        if (reg.waiting) {
+          console.warn('[Push] Service worker is waiting (stale) — sending SKIP_WAITING');
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          await new Promise<void>((resolve) => {
+            navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
+          });
+        }
+
+        // Case 3: No active controller yet — wait for one
+        if (!navigator.serviceWorker.controller) {
+          console.warn('[Push] No controlling service worker — waiting for controllerchange');
+          await new Promise<void>((resolve) => {
+            navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true });
           });
         }
 
