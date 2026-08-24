@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Check,
   Circle,
+  Lock,
   Pencil,
   Plus,
   Sparkles,
@@ -26,6 +27,11 @@ interface DailyQuestsProps {
   quests: QuestState;
   /** Local day key ('YYYY-MM-DD'). */
   day: string;
+  /**
+   * Today's quests are locked until the user completes a full phase (and stays
+   * active). While locked nothing can be checked and no XP accrues.
+   */
+  locked?: boolean;
   onToggleQuest: (questId: string) => void;
   onAddQuest: (quest: Quest) => void;
   onDeleteQuest: (questId: string) => void;
@@ -34,10 +40,12 @@ interface DailyQuestsProps {
 /**
  * Home-page daily routines card: today's checklist plus the XP ledger.
  * Checking quests earns XP; finishing every enabled quest pays a bonus.
+ * Quests are gated behind completing a phase that day (the `locked` flag).
  */
 export const DailyQuests: React.FC<DailyQuestsProps> = ({
   quests,
   day,
+  locked = false,
   onToggleQuest,
   onAddQuest,
   onDeleteQuest
@@ -193,6 +201,16 @@ export const DailyQuests: React.FC<DailyQuestsProps> = ({
         />
       </div>
 
+      {locked && (
+        <p
+          role="status"
+          className="flex items-start gap-1.5 mb-3 text-[11px] leading-relaxed text-muted bg-raised border border-line rounded-md px-2.5 py-2"
+        >
+          <Lock className="w-3.5 h-3.5 shrink-0 text-faint mt-px" aria-hidden="true" />
+          <span>Quests are locked — finish a phase today to unlock them and earn XP.</span>
+        </p>
+      )}
+
       <ul className="space-y-0.5">
         {quests.items.map((q) => {
           const done = !!quests.completions[q.id]?.[day];
@@ -201,14 +219,15 @@ export const DailyQuests: React.FC<DailyQuestsProps> = ({
               <div
                 className={`group flex items-center gap-2.5 px-2 -mx-2 py-1.5 rounded-md transition-colors ${
                   q.enabled ? 'hover:bg-hover' : 'opacity-50'
-                }`}
+                } ${locked ? 'opacity-60' : ''}`}
               >
                 <button
-                  onClick={() => q.enabled && onToggleQuest(q.id)}
-                  disabled={!q.enabled}
+                  onClick={() => q.enabled && !locked && onToggleQuest(q.id)}
+                  disabled={!q.enabled || locked}
+                  aria-disabled={locked}
                   role="checkbox"
                   aria-checked={done}
-                  aria-label={`${q.title}${done ? ' — done today' : ''}`}
+                  aria-label={`${q.title}${done ? ' — done today' : ''}${locked ? ' (locked)' : ''}`}
                   className="shrink-0 cursor-pointer"
                 >
                   {done ? (
@@ -221,9 +240,12 @@ export const DailyQuests: React.FC<DailyQuestsProps> = ({
                 </button>
 
                 <button
-                  onClick={() => q.enabled && onToggleQuest(q.id)}
-                  disabled={!q.enabled}
-                  className={`min-w-0 flex-1 text-left text-[13px] cursor-pointer ${
+                  onClick={() => q.enabled && !locked && onToggleQuest(q.id)}
+                  disabled={!q.enabled || locked}
+                  aria-disabled={locked}
+                  className={`min-w-0 flex-1 text-left text-[13px] ${
+                    locked ? 'cursor-not-allowed' : 'cursor-pointer'
+                  } ${
                     done ? 'text-muted line-through decoration-line-strong' : 'text-text'
                   }`}
                 >
@@ -295,7 +317,7 @@ export const DailyQuests: React.FC<DailyQuestsProps> = ({
 
       {addRow()}
 
-      {enabled.length > 0 && doneCount === enabled.length && (
+      {!locked && enabled.length > 0 && doneCount === enabled.length && (
         <p className="mt-2 text-[11px] text-success" role="status">
           All quests complete — bonus XP earned. See you tomorrow.
         </p>

@@ -14,7 +14,10 @@ import {
   levelFromXp,
   xpForLevel,
   toggleQuestCompletion,
-  syncMinuteQuests
+  syncMinuteQuests,
+  isDayQuestEligible,
+  clearQuestDay,
+  QUEST_RULES_VERSION
 } from '../src/utils/storage';
 import { threeWayMerge } from '../src/utils/merge';
 import {
@@ -368,6 +371,226 @@ describe('merge: daily quests', () => {
     const base = app();
     const { merged } = threeWayMerge(base, app(), app());
     assert.equal(merged.quests, undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// XP gate — a day only earns XP when it is both active (streak kept) and a
+// full roadmap phase was completed that day.
+// ---------------------------------------------------------------------------
+
+function progressWithPhaseDone(phaseId: number, day: string): Record<string, PlanProgress> {
+  return { 'go-roadmap': { ...emptyProgress, phaseDoneDay: { [String(phaseId)]: day } } };
+}
+
+describe('isDayQuestEligible', () => {
+  const day = '2026-08-24';
+
+  test('requires both streak activity and a phase completed that day', () => {
+    const data = app({
+      global: global({ historyDates: [day] }),
+      progressByPlan: progressWithPhaseDone(3, day)
+    });
+    assert.equal(isDayQuestEligible(data, day), true);
+  });
+
+  test('false when active but no phase was completed that day', () => {
+    const data = app({ global: global({ historyDates: [day] }), progressByPlan: {} });
+    assert.equal(isDayQuestEligible(data, day), false);
+  });
+
+  test('false when a phase was completed that day but the day has no activity', () => {
+    const data = app({ progressByPlan: progressWithPhaseDone(3, day) });
+    assert.equal(isDayQuestEligible(data, day), false);
+  });
+
+  test('a phase completed on a different day does not qualify', () => {
+    const data = app({
+      global: global({ historyDates: [day] }),
+      progressByPlan: progressWithPhaseDone(3, '2026-08-23')
+    });
+    assert.equal(isDayQuestEligible(data, day), false);
+  });
+
+  test('a completed phase in any plan qualifies (not just the active one)', () => {
+    const data = app({
+      global: global({ historyDates: [day] }),
+      progressByPlan: { 'custom-plan': { ...emptyProgress, phaseDoneDay: { '7': day } } }
+    });
+    assert.equal(isDayQuestEligible(data, day), true);
+  });
+
+  test('study minutes alone count as activity for the day', () => {
+    const data = app({
+      global: global({ historyMinutes: { [day]: 15 } }),
+      progressByPlan: progressWithPhaseDone(3, day)
+    });
+    assert.equal(isDayQuestEligible(data, day), true);
+  });
+});
+
+describe('clearQuestDay', () => {
+  test('removes a day and claws back the +10s plus the +25 all-done bonus', () => {
+    const state = quests({
+      items: [quest({ id: 'a' }), quest({ id: 'b' })],
+      completions: { a: { '2026-08-24': true }, b: { '2026-08-24': true, '2026-08-23': true } },
+      xp: 90
+    });
+    const out = clearQuestDay(state, '2026-08-24', { enabledQuestCount: 2 });
+    assert.equal(out.completions.a?.['2026-08-24'], undefined);
+    assert.equal(out.completions.b?.['2026-08-24'], undefined);
+    assert.equal(out.completions.b?.['2026-08-23'], true, 'other days untouched');
+    assert.equal(out.xp, 90 - 10 - 10 - 25);
+  });
+
+  test('claws back only the +10s when the all-done bonus was not reached', () => {
+    const state = quests({
+      items: [quest({ id: 'a' }), quest({ id: 'b' })],
+      completions: { a: { '2026-08-24': true } },
+      xp: 10
+    });
+    const out = clearQuestDay(state, '2026-08-24', { enabledQuestCount: 2 });
+    assert.equal(out.xp, 0);
+    assert.deepEqual(out.completions, {});
+  });
+
+  test('removes now-empty per-quest day maps', () => {
+    const state = quests({
+      items: [quest({ id: 'a' })],
+      completions: { a: { '2026-08-24': true } },
+      xp: 10
+    });
+    const out = clearQuestDay(state, '2026-08-24', { enabledQuestCount: 1 });
+    assert.deepEqual(out.completions, {});
+    assert.equal(out.xp, 0);
+  });
+
+  test('disabled quests do not block the bonus clawback', () => {
+    const state = quests({
+      items: [quest({ id: 'a' }), quest({ id: 'off', enabled: false })],
+      completions: { a: { d: true } },
+      xp: 35
+    });
+    const out = clearQuestDay(state, 'd', { enabledQuestCount: 1 });
+    assert.equal(out.xp, 0, '+10 and +25 clawed back; the disabled quest is ignored');
+  });
+
+  test('is a no-op for a day with no completions', () => {
+    const state = quests({ items: [quest()], xp: 45 });
+    const out = clearQuestDay(state, '2026-08-24', { enabledQuestCount: 1 });
+    assert.equal(out, state, 'same reference returned — nothing changed');
+  });
+
+  test('xp never goes negative', () => {
+    const state = quests({
+      items: [quest({ id: 'a' })],
+      completions: { a: { d: true } },
+      xp: 2
+    });
+    const out = clearQuestDay(state, 'd', { enabledQuestCount: 1 });
+    assert.equal(out.xp, 0);
+  });
+});
+
+describe('normalizeAppData: rulesVersion XP reset', () => {
+  test('quests without a rulesVersion reset xp to 0 and stamp the current version', () => {
+    const out = normalizeAppData({
+      version: 2,
+      quests: quests({ items: [quest()], completions: {}, xp: 35 })
+    });
+    assert.equal(out.quests!.xp, 0);
+    assert.equal(out.quests!.rulesVersion, QUEST_RULES_VERSION);
+  });
+
+  test('quests already at the current rulesVersion keep their xp', () => {
+    const out = normalizeAppData({
+      version: 2,
+      quests: quests({ items: [quest()], rulesVersion: QUEST_RULES_VERSION, xp: 20 })
+    });
+    assert.equal(out.quests!.xp, 20);
+    assert.equal(out.quests!.rulesVersion, QUEST_RULES_VERSION);
+  });
+
+  test('rulesVersion survives a normalize round-trip (reset happens only once)', () => {
+    const once = normalizeAppData({
+      version: 2,
+      quests: quests({ items: [quest()], rulesVersion: QUEST_RULES_VERSION, xp: 20 })
+    });
+    const twice = normalizeAppData(once);
+    assert.equal(twice.quests!.xp, 20);
+    assert.equal(twice.quests!.rulesVersion, QUEST_RULES_VERSION);
+  });
+});
+
+describe('normalizeAppData: phaseDoneDay', () => {
+  test('valid phase completion days are preserved', () => {
+    const out = normalizeAppData({
+      version: 2,
+      progressByPlan: {
+        'go-roadmap': {
+          ...emptyProgress,
+          completedPhases: [3],
+          phaseDoneDay: { '3': '2026-08-24', '4': '2026-08-23' }
+        }
+      }
+    });
+    assert.deepEqual(out.progressByPlan['go-roadmap'].phaseDoneDay, {
+      '3': '2026-08-24',
+      '4': '2026-08-23'
+    });
+  });
+
+  test('garbage phaseDoneDay values are dropped', () => {
+    const out = normalizeAppData({
+      version: 2,
+      progressByPlan: {
+        'go-roadmap': {
+          ...emptyProgress,
+          completedPhases: [3],
+          phaseDoneDay: { '3': 'not-a-date', '4': '2026-08-23' }
+        }
+      }
+    });
+    assert.deepEqual(out.progressByPlan['go-roadmap'].phaseDoneDay, { '4': '2026-08-23' });
+  });
+});
+
+describe('merge: phaseDoneDay & rulesVersion', () => {
+  test('phaseDoneDay entries are unioned across devices', () => {
+    const base = app();
+    const local = app({
+      progressByPlan: { p: { ...emptyProgress, phaseDoneDay: { '3': '2026-08-24' } } }
+    });
+    const remote = app({
+      progressByPlan: { p: { ...emptyProgress, phaseDoneDay: { '4': '2026-08-23' } } }
+    });
+    const { merged } = threeWayMerge(base, local, remote);
+    assert.deepEqual(merged.progressByPlan.p.phaseDoneDay, { '3': '2026-08-24', '4': '2026-08-23' });
+  });
+
+  test('rulesVersion is carried forward as the max', () => {
+    const base = app();
+    const local = app({ quests: quests({ rulesVersion: 1, xp: 5 }) });
+    const remote = app({ quests: quests({ rulesVersion: 2, xp: 9 }) });
+    const { merged } = threeWayMerge(base, local, remote);
+    assert.equal(merged.quests!.rulesVersion, 2);
+  });
+
+  test('xp from a stale-rules side is discarded when the other side is current', () => {
+    const base = app();
+    const local = app({ quests: quests({ rulesVersion: 1, xp: 0 }) });
+    const remote = app({ quests: quests({ xp: 35 }) }); // pre-migration, no rulesVersion
+    const { merged } = threeWayMerge(base, local, remote);
+    assert.equal(merged.quests!.rulesVersion, 1);
+    assert.equal(merged.quests!.xp, 0, 'stale-rules xp must not resurrect via merge');
+  });
+
+  test('same-rules merge keeps the higher xp', () => {
+    const base = app();
+    const local = app({ quests: quests({ rulesVersion: 1, xp: 30 }) });
+    const remote = app({ quests: quests({ rulesVersion: 1, xp: 75 }) });
+    const { merged } = threeWayMerge(base, local, remote);
+    assert.equal(merged.quests!.xp, 75);
   });
 });
 

@@ -251,8 +251,21 @@ function mergeQuests(
   return {
     items: [...byId.values()],
     completions,
-    xp: Math.max(l.xp, r.xp)
+    xp: rulesVersionAwareXp(l, r),
+    ...(Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) ? { rulesVersion: Math.max(l.rulesVersion ?? 0, r.rulesVersion ?? 0) } : {})
   };
+}
+
+/**
+ * XP from the side running a higher rules version wins; on equal versions the
+ * higher balance wins. This prevents a stale pre-migration cloud copy from
+ * resurrecting an old XP balance over a current-rules (reset-to-0) side.
+ */
+function rulesVersionAwareXp(l: QuestState, r: QuestState): number {
+  const lv = l.rulesVersion ?? 0;
+  const rv = r.rulesVersion ?? 0;
+  if (lv !== rv) return lv > rv ? l.xp : r.xp;
+  return Math.max(l.xp, r.xp);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,7 +425,8 @@ function mergeProgress(
         lp.stepDurations ?? {},
         rp.stepDurations ?? {}
       ),
-      stepDoneDay: recordLWW(lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {})
+      stepDoneDay: recordLWW(lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {}),
+      phaseDoneDay: recordLWW(lp.phaseDoneDay ?? {}, rp.phaseDoneDay ?? {})
     };
 
     // With a common ancestor, flag the plan only when both devices changed
@@ -425,6 +439,7 @@ function mergeProgress(
         bothChangedKey(bp.userNotes, lp.userNotes, rp.userNotes) ||
         bothChangedKey(bp.stepDurations ?? {}, lp.stepDurations ?? {}, rp.stepDurations ?? {}) ||
         bothChangedKey(bp.stepDoneDay ?? {}, lp.stepDoneDay ?? {}, rp.stepDoneDay ?? {}) ||
+        bothChangedKey(bp.phaseDoneDay ?? {}, lp.phaseDoneDay ?? {}, rp.phaseDoneDay ?? {}) ||
         (bp.lastStudiedPhaseId !== lp.lastStudiedPhaseId &&
           bp.lastStudiedPhaseId !== rp.lastStudiedPhaseId &&
           lp.lastStudiedPhaseId !== rp.lastStudiedPhaseId)

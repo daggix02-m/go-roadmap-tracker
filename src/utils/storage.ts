@@ -59,7 +59,8 @@ export const EMPTY_PLAN_PROGRESS: PlanProgress = {
   userNotes: {},
   lastStudiedPhaseId: null,
   stepDurations: {},
-  stepDoneDay: {}
+  stepDoneDay: {},
+  phaseDoneDay: {}
 };
 
 export function emptyPlanProgress(): PlanProgress {
@@ -72,6 +73,12 @@ export function emptyPlanProgress(): PlanProgress {
 
 export const QUEST_XP_PER_COMPLETION = 10;
 export const QUEST_ALL_DONE_BONUS_XP = 25;
+/**
+ * Current XP economy rules. Days only earn XP when the user keeps their
+ * streak AND completes a full phase. Bump to invalidate old XP balances
+ * (normalizeAppData resets them to 0 once).
+ */
+export const QUEST_RULES_VERSION = 1;
 
 /** Quadratic level curve: L1 at 0 XP, L2 at 100, L3 at 400, Ln at (L-1)²·100. */
 export function xpForLevel(level: number): number {
@@ -158,6 +165,54 @@ export function syncMinuteQuests(
   return next;
 }
 
+/**
+ * XP gate: a day is only eligible to earn quest XP when the user kept their
+ * streak (the day shows up as active) AND completed at least one full phase
+ * that day. Mirrors the streak's notion of "active day" — opening the app
+ * counts, exactly like `calculateGlobalStreak`.
+ */
+export function isDayQuestEligible(data: AppData, day: string): boolean {
+  const active =
+    (data.global.historyDates ?? []).includes(day) ||
+    (data.global.historyMinutes?.[day] ?? 0) > 0;
+  if (!active) return false;
+  return Object.values(data.progressByPlan).some((pp) =>
+    Object.values(pp.phaseDoneDay ?? {}).includes(day)
+  );
+}
+
+/**
+ * Strips every quest completion for `day` and claws back the XP that day
+ * earned — +10 per completed quest plus the +25 all-done bonus when the whole
+ * enabled set was done. Used when a day stops qualifying for XP (e.g. the
+ * completing phase is un-completed). Returns the state unchanged when the day
+ * had nothing recorded.
+ */
+export function clearQuestDay(
+  state: QuestState,
+  day: string,
+  opts: { enabledQuestCount: number }
+): QuestState {
+  const completions: QuestState['completions'] = {};
+  let removed = 0;
+  for (const [questId, days] of Object.entries(state.completions)) {
+    if (days[day]) removed += 1;
+    const rest = { ...days };
+    delete rest[day];
+    if (Object.keys(rest).length > 0) completions[questId] = rest;
+  }
+  if (removed === 0) return state;
+
+  const enabled = state.items.filter((q) => q.enabled);
+  const hadAll =
+    opts.enabledQuestCount > 0 &&
+    enabled.length > 0 &&
+    enabled.every((q) => state.completions[q.id]?.[day] === true);
+  const delta = removed * QUEST_XP_PER_COMPLETION + (hadAll ? QUEST_ALL_DONE_BONUS_XP : 0);
+
+  return { ...state, completions, xp: Math.max(0, state.xp - delta) };
+}
+
 export function defaultAppData(): AppData {
   return {
     version: 2,
@@ -237,7 +292,12 @@ function sanitizeQuestState(value: unknown): QuestState | undefined {
     xp:
       typeof raw.xp === 'number' && Number.isFinite(raw.xp) && raw.xp > 0
         ? Math.floor(raw.xp)
-        : 0
+        : 0,
+    ...(typeof raw.rulesVersion === 'number' &&
+    Number.isFinite(raw.rulesVersion) &&
+    raw.rulesVersion > 0
+      ? { rulesVersion: Math.floor(raw.rulesVersion) }
+      : {})
   };
 }
 
@@ -320,7 +380,8 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
         userNotes: raw.userNotes && typeof raw.userNotes === 'object' ? raw.userNotes : {},
         lastStudiedPhaseId: typeof raw.lastStudiedPhaseId === 'number' ? raw.lastStudiedPhaseId : null,
         stepDurations: sanitizeRecord(raw.stepDurations, (v) => typeof v === 'number' && v > 0),
-        stepDoneDay: sanitizeRecord(raw.stepDoneDay, (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
+        stepDoneDay: sanitizeRecord(raw.stepDoneDay, (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)),
+        phaseDoneDay: sanitizeRecord(raw.phaseDoneDay, (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v))
       };
     }
   }
@@ -333,7 +394,13 @@ export function normalizeAppData(parsed: Partial<AppData> | null | undefined): A
     customPlans.push({ ...DEMO_PLAN });
   }
 
-  const quests = sanitizeQuestState(parsed.quests);
+  let quests = sanitizeQuestState(parsed.quests);
+  // One-time XP economy reset: XP earned under older rules (no rulesVersion
+  // stamp) is invalid — zero it and stamp the current version so the reset
+  // never repeats (even across devices via merge).
+  if (quests && (quests.rulesVersion ?? 0) < QUEST_RULES_VERSION) {
+    quests = { ...quests, rulesVersion: QUEST_RULES_VERSION, xp: 0 };
+  }
 
   return {
     version: 2,

@@ -14,6 +14,8 @@ import {
   emptyQuestState,
   syncMinuteQuests,
   toggleQuestCompletion,
+  isDayQuestEligible,
+  clearQuestDay,
   getLocalDateString
 } from './utils/storage';
 import { BUILT_IN_PLANS, deleteCustomPlan, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
@@ -233,11 +235,22 @@ export default function App() {
 
   // --- Daily quests ---------------------------------------------------------
 
+  /**
+   * Today's quests are locked until the user completes at least one full phase
+   * (and is active — which opening the app already satisfies via the streak
+   * touch). While locked, nothing can be checked and no XP accrues.
+   */
+  const questsLocked = useMemo(
+    () => !isDayQuestEligible(appData, getLocalDateString()),
+    [appData]
+  );
+
   /** After study minutes land, auto-complete any minute-target quests for today. */
   const withQuestSync = useCallback((data: AppData): AppData => {
     const q = data.quests;
     if (!q || q.items.length === 0) return data;
     const day = getLocalDateString();
+    if (!isDayQuestEligible(data, day)) return data;
     return {
       ...data,
       quests: syncMinuteQuests(q, data.global.historyMinutes[day] ?? 0, day, {
@@ -249,6 +262,7 @@ export default function App() {
   const handleToggleQuest = useCallback((questId: string) => {
     handleUpdateData((prev) => {
       const q = prev.quests ?? emptyQuestState();
+      if (!isDayQuestEligible(prev, getLocalDateString())) return prev;
       return {
         ...prev,
         quests: toggleQuestCompletion(q, questId, getLocalDateString(), {
@@ -378,14 +392,40 @@ export default function App() {
     const isAlreadyComplete = progress.completedPhases.includes(phaseId);
 
     if (isAlreadyComplete) {
-      updateProgress((prev) => ({
-        ...prev,
-        completedPhases: prev.completedPhases.filter((id) => id !== phaseId)
-      }));
+      // Un-completing removes the phase-done stamp. If that leaves the day
+      // with no completed phase at all, today's quest XP is clawed back and
+      // the quests re-lock.
+      handleUpdateData((prev) => {
+        const current = prev.progressByPlan[activePlan.id] ?? emptyPlanProgress();
+        const phaseDoneDay = { ...(current.phaseDoneDay ?? {}) };
+        delete phaseDoneDay[String(phaseId)];
+        let next: AppData = {
+          ...prev,
+          progressByPlan: {
+            ...prev.progressByPlan,
+            [activePlan.id]: {
+              ...current,
+              completedPhases: current.completedPhases.filter((id) => id !== phaseId),
+              phaseDoneDay
+            }
+          }
+        };
+        const q = next.quests;
+        if (q && !isDayQuestEligible(next, getLocalDateString())) {
+          next = {
+            ...next,
+            quests: clearQuestDay(q, getLocalDateString(), {
+              enabledQuestCount: q.items.filter((i) => i.enabled).length
+            })
+          };
+        }
+        return next;
+      });
       return;
     }
 
-    // Completing also checks every exit criterion and records activity for the streak.
+    // Completing also checks every exit criterion and records activity for the
+    // streak — which makes today active AND phase-completed, unlocking quests.
     handleUpdateData((prev) => {
       const current = prev.progressByPlan[activePlan.id] ?? emptyPlanProgress();
       const phase = activePlan.phases.find((p) => p.id === phaseId);
@@ -398,7 +438,8 @@ export default function App() {
             completedPhases: [...current.completedPhases, phaseId].sort((a, b) => a - b),
             criteriaChecked: Object.fromEntries(
               (phase?.exit ?? []).map((_, i) => [`${phaseId}_${i}`, true])
-            )
+            ),
+            phaseDoneDay: { ...(current.phaseDoneDay ?? {}), [String(phaseId)]: getLocalDateString() }
           }
         }
       };
@@ -859,6 +900,7 @@ export default function App() {
         <DailyQuests
           quests={appData.quests ?? emptyQuestState()}
           day={getLocalDateString()}
+          locked={questsLocked}
           onToggleQuest={handleToggleQuest}
           onAddQuest={handleUpsertQuest}
           onDeleteQuest={handleDeleteQuest}

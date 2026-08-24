@@ -60,6 +60,8 @@ export interface PlanProgress {
   stepDurations?: Record<string, number>;
   /** Step marked done via its countdown timer — value is the local day it was done. */
   stepDoneDay?: Record<string, string>;
+  /** phaseId -> local day ('YYYY-MM-DD') the phase was marked complete. */
+  phaseDoneDay?: Record<string, string>;
 }
 
 export interface AppSettings {
@@ -123,6 +125,12 @@ export interface QuestState {
   /** questId -> local day ('YYYY-MM-DD') -> true for each completed day. */
   completions: Record<string, Record<string, boolean>>;
   xp: number;
+  /**
+   * Version of the XP economy rules. XP accumulated under an older rules
+   * version is invalid and is reset to 0 exactly once on normalize. Kept in
+   * sync across devices so a stale cloud copy can't resurrect old XP.
+   */
+  rulesVersion?: number;
 }
 
 /** Streak/history shared across all plans. */
