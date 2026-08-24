@@ -6,7 +6,8 @@ export type ConflictResolution = 'local' | 'remote' | 'merge';
 
 interface ConflictModalProps {
   conflicts: Conflict[];
-  onResolve: (resolution: ConflictResolution) => void;
+  /** `remember` is true when the user asked to store the choice. */
+  onResolve: (resolution: ConflictResolution, remember?: boolean) => void;
 }
 
 /**
@@ -16,16 +17,18 @@ interface ConflictModalProps {
  *   • "Use cloud"       → remote wins entirely
  *   • "Keep both"       → fork: keep local + create a new snapshot
  *     with the remote data under a new plan id (git-style "both")
+ * Optionally remembers the choice so future conflicts auto-resolve.
  */
 export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResolve }) => {
   const panelRef = useRef<HTMLDivElement>(null);
+  const [remember, setRemember] = useState(false);
 
   // Auto-focus panel for keyboard nav.
   useEffect(() => {
     panelRef.current?.focus();
   }, []);
 
-  // Escape closes with "local" (safe default).
+  // Escape closes with "local" (safe default) — never remembers.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onResolve('local');
@@ -33,6 +36,9 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResol
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onResolve]);
+
+  const resolve = (resolution: ConflictResolution) =>
+    onResolve(resolution, remember);
 
   return (
     <div
@@ -84,7 +90,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResol
         {/* Resolution buttons */}
         <div className="grid grid-cols-1 gap-2">
           <button
-            onClick={() => onResolve('local')}
+            onClick={() => resolve('local')}
             className="flex items-center gap-3 px-4 py-3 rounded-lg border border-line hover:border-accent/50 hover:bg-accent/5 transition-colors cursor-pointer text-left group"
           >
             <ArrowLeft className="w-4 h-4 text-accent shrink-0" />
@@ -95,7 +101,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResol
           </button>
 
           <button
-            onClick={() => onResolve('remote')}
+            onClick={() => resolve('remote')}
             className="flex items-center gap-3 px-4 py-3 rounded-lg border border-line hover:border-accent/50 hover:bg-accent/5 transition-colors cursor-pointer text-left group"
           >
             <ArrowRight className="w-4 h-4 text-accent shrink-0" />
@@ -106,7 +112,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResol
           </button>
 
           <button
-            onClick={() => onResolve('merge')}
+            onClick={() => resolve('merge')}
             className="flex items-center gap-3 px-4 py-3 rounded-lg border border-line hover:border-accent/50 hover:bg-accent/5 transition-colors cursor-pointer text-left group"
           >
             <GitMerge className="w-4 h-4 text-accent shrink-0" />
@@ -116,6 +122,20 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({ conflicts, onResol
             </div>
           </button>
         </div>
+
+        {/* Remember choice */}
+        <label className="mt-4 flex items-start gap-2.5 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="mt-0.5 w-3.5 h-3.5 accent-current cursor-pointer"
+          />
+          <span className="text-[11px] text-muted leading-relaxed">
+            Always resolve future conflicts this way. You can change it anytime in
+            Settings → Preferences → Sync conflicts.
+          </span>
+        </label>
       </div>
     </div>
   );

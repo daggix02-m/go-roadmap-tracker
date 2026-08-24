@@ -515,3 +515,47 @@ export function threeWayMerge(
 
   return { merged, conflicts };
 }
+// ---------------------------------------------------------------------------
+// Conflict resolution by user preference
+// ---------------------------------------------------------------------------
+
+/** How a conflict was resolved: keep local, take remote, or fork both. */
+export type ConflictResolution = 'local' | 'remote' | 'merge';
+
+/**
+ * Apply a conflict resolution to a (local, remote) pair.
+ *
+ * • 'local'  → local state wins untouched
+ * • 'remote' → remote state adopted untouched
+ * • 'merge'  → keep local as-is and fork every remote-only custom plan under
+ *   a new id with a " (cloud)" suffix so nothing from either side is lost
+ *   (git-style "keep both").
+ */
+export function resolveWithPreference(
+  resolution: ConflictResolution,
+  local: AppData,
+  remote: AppData
+): AppData {
+  switch (resolution) {
+    case 'local':
+      return local;
+    case 'remote':
+      return remote;
+    case 'merge': {
+      const remoteOnlyPlans = remote.customPlans.filter(
+        (rp) => !local.customPlans.some((lp) => lp.id === rp.id)
+      );
+      const forked = remoteOnlyPlans.map((p) => ({
+        ...p,
+        id: `${p.id}-fork-${Date.now()}`,
+        name: `${p.name} (cloud)`,
+        lastModifiedAt: Date.now()
+      }));
+      return {
+        ...local,
+        customPlans: [...local.customPlans, ...forked],
+        lastModifiedAt: Date.now()
+      };
+    }
+  }
+}

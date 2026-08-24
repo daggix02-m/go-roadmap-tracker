@@ -11,8 +11,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { threeWayMerge, canonicalJson, Conflict } from './merge';
-import { AppData } from '../types';
+import { threeWayMerge, canonicalJson, Conflict, resolveWithPreference } from './merge';
+import { AppData, ConflictResolutionPref } from '../types';
 import { loadAppData, saveAppData, onAppDataSaved } from './storage';
 import { getDeviceLabel } from './device';
 
@@ -43,8 +43,14 @@ export interface SyncActions {
   syncNow: () => Promise<void>;
   /** Push local data to cloud immediately (no merge, no conflict). */
   pushNow: () => Promise<void>;
-  /** User chose a resolution for pending conflicts. */
-  resolveConflicts: (resolution: 'local' | 'remote' | 'merge') => void;
+  /**
+   * User (or their remembered preference) chose a resolution for pending
+   * conflicts. `remember` also stores the choice in settings for future syncs.
+   */
+  resolveConflicts: (
+    resolution: 'local' | 'remote' | 'merge',
+    remember?: boolean
+  ) => Promise<void>;
 }
 
 const DEVICE_LABEL = getDeviceLabel();
@@ -174,13 +180,29 @@ export function useSync(): SyncState & SyncActions {
           await pushNow(merged);
         }
         setSyncedData(merged);
-      } else {
-        // Conflicts need user decision — pause sync, show modal.
-        setPendingConflicts(conflicts);
-        setPendingMerged(merged);
-        setPendingLocal(local);
-        setPendingRemote(remoteData);
+        return;
       }
+
+      // Remembered preference? Apply it without interrupting the user.
+      const pref = local.settings.conflictResolution;
+      if (pref && pref !== 'ask') {
+        const final = resolveWithPreference(pref, local, remoteData);
+        saveAppData(final, { silent: true });
+        localStorage.setItem('plan_tracker_last_synced', JSON.stringify(final));
+        setSyncedData(final);
+        try {
+          await pushNow(final);
+        } catch {
+          // Push failed — next sync cycle retries against fresh cloud state.
+        }
+        return;
+      }
+
+      // Conflicts need a human decision — pause sync, show modal.
+      setPendingConflicts(conflicts);
+      setPendingMerged(merged);
+      setPendingLocal(local);
+      setPendingRemote(remoteData);
     } finally {
       syncingRef.current = false;
       setSyncing(false);
@@ -189,39 +211,16 @@ export function useSync(): SyncState & SyncActions {
     }
   }, [isAuthenticated, cloudSnapshot, pushNow, pendingConflicts]);
 
-  /** Resolve pending conflicts. */
+  /** Resolve pending conflicts (from the modal, or a remembered preference). */
   const resolveConflicts = useCallback(
-    async (resolution: 'local' | 'remote' | 'merge') => {
+    async (resolution: 'local' | 'remote' | 'merge', remember?: boolean) => {
       if (!pendingMerged || !pendingLocal || !pendingRemote) return;
 
-      let final: AppData;
-
-      switch (resolution) {
-        case 'local':
-          final = pendingLocal;
-          break;
-        case 'remote':
-          final = pendingRemote;
-          break;
-        case 'merge': {
-          // Fork: keep local as-is, duplicate remote's custom plans
-          // under new IDs so nothing is lost.
-          const remoteOnlyPlans = pendingRemote.customPlans.filter(
-            (rp) => !pendingLocal.customPlans.some((lp) => lp.id === rp.id)
-          );
-          const forked = remoteOnlyPlans.map((p) => ({
-            ...p,
-            id: `${p.id}-fork-${Date.now()}`,
-            name: `${p.name} (cloud)`,
-            lastModifiedAt: Date.now()
-          }));
-          final = {
-            ...pendingLocal,
-            customPlans: [...pendingLocal.customPlans, ...forked],
-            lastModifiedAt: Date.now()
-          };
-          break;
-        }
+      const final = resolveWithPreference(resolution, pendingLocal, pendingRemote);
+      if (remember) {
+        // Store the standing choice inside the resolved state itself so one
+        // save covers both the outcome and the preference.
+        final.settings.conflictResolution = resolution;
       }
 
       saveAppData(final, { silent: true });

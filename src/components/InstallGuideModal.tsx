@@ -1,5 +1,5 @@
 import React from 'react';
-import { Download, Share, Smartphone, WifiOff, BellRing, X } from 'lucide-react';
+import { Download, Share, Smartphone, Monitor, WifiOff, BellRing, X } from 'lucide-react';
 
 interface InstallGuideModalProps {
   isOpen: boolean;
@@ -98,7 +98,7 @@ export const InstallGuideModal: React.FC<InstallGuideModalProps> = ({
         </div>
 
         {/* Android */}
-        <div className="p-4 rounded-lg border border-line">
+        <div className="p-4 rounded-lg border border-line mb-3">
           <div className="flex items-center gap-2 text-sm font-medium text-text mb-3">
             <Download className="w-4 h-4 text-muted" />
             Android — Chrome / Edge
@@ -113,6 +113,37 @@ export const InstallGuideModal: React.FC<InstallGuideModalProps> = ({
               <span>
                 Select <strong className="text-text">Install app</strong> or{' '}
                 <strong className="text-text">Add to Home screen</strong>.
+              </span>
+            </li>
+          </ol>
+        </div>
+
+        {/* Desktop */}
+        <div className="p-4 rounded-lg border border-line">
+          <div className="flex items-center gap-2 text-sm font-medium text-text mb-3">
+            <Monitor className="w-4 h-4 text-muted" />
+            Desktop — Chrome / Edge / Brave
+          </div>
+          <ol className="space-y-2.5 text-xs text-muted leading-relaxed">
+            <li className="flex items-start gap-2.5">
+              <span className={stepBadge}>1</span>
+              <span>
+                Look for the <strong className="text-text">install icon</strong> (a monitor with a
+                down-arrow) in the address bar, or open the browser menu.
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className={stepBadge}>2</span>
+              <span>
+                Click <strong className="text-text">Install</strong> /{' '}
+                <strong className="text-text">Install Plan Tracker</strong>.
+              </span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <span className={stepBadge}>3</span>
+              <span>
+                The app opens in its own window with an icon in your dock/taskbar — no browser
+                chrome.
               </span>
             </li>
           </ol>

@@ -1,10 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Camera,
   Check,
   Clock,
   Download,
+  FileUp,
   Loader2,
   Mail,
   Target,
@@ -15,11 +16,15 @@ import {
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { useAuthActions, useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
-import { AppData, AppSettings, HomeWidgetId } from '../types';
+import { AppData, AppSettings, HomeWidgetId, Plan } from '../types';
 import { exportAppDataAsJSON } from '../utils/storage';
 import { authErrorMessage } from '../utils/authErrors';
 import { THEMES } from '../utils/themes';
 import { WIDGET_META, WIDGET_ORDER } from './HomeWidgets/WidgetSwitcher';
+
+const ImportModal = lazy(() =>
+  import('./ImportModal').then((m) => ({ default: m.ImportModal }))
+);
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -30,6 +35,9 @@ interface SettingsModalProps {
   onOpenAuthModal: () => void;
   /** One-tap showcase: demo theme + layout + widget (+ template quests when none exist). */
   onApplyDemoSetup?: () => void;
+  /** Multi-format import (JSON / Markdown / CSV / Excel). */
+  onImportAppData: (data: Partial<AppData>) => void;
+  onImportPlans: (plans: Plan[], replaceAll: boolean) => void;
 }
 
 const LAYOUT_META = [
@@ -89,8 +97,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   appData,
   onClose,
   onOpenAuthModal,
-  onApplyDemoSetup
+  onApplyDemoSetup,
+  onImportAppData,
+  onImportPlans
 }) => {
+  const [showImport, setShowImport] = useState(false);
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const viewer = useQuery(api.auth.viewer);
@@ -529,14 +540,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Data */}
           <section className="space-y-2.5 pt-4 border-t border-line">
-            <h3 className={labelClass}>Data</h3>
-            <button
-              onClick={() => exportAppDataAsJSON(appData)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export account data
-            </button>
+            <h3 className={labelClass}>Account data</h3>
 
             <div className="p-3 rounded-lg border border-danger/30 bg-danger/5">
               <p className="text-xs text-danger font-medium">Delete account</p>
@@ -572,6 +576,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </section>
             </>
           )}
+
+          {/* Import/Export — the data is local-first, so these work signed out */}
+          <section className="space-y-2.5 pt-4 border-t border-line">
+            <h3 className={labelClass}>Backup</h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              >
+                <FileUp className="w-3.5 h-3.5" />
+                Import data
+              </button>
+              <button
+                onClick={() => exportAppDataAsJSON(appData)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-line text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export all data
+              </button>
+            </div>
+            <p className="text-[11px] text-faint">
+              JSON backups · Markdown outlines · CSV / Excel sheets.
+            </p>
+          </section>
 
           {/* Appearance — local-only, instant-apply, works signed out */}
           <section className="space-y-4">
@@ -763,6 +791,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
             </div>
 
+            {/* Sync conflicts — applies instantly */}
+            <div>
+              <label htmlFor="settings-conflict" className={labelClass}>
+                Sync conflicts
+              </label>
+              <select
+                id="settings-conflict"
+                value={settings.conflictResolution ?? 'ask'}
+                onChange={(e) =>
+                  onUpdateSettings((prev) => ({
+                    ...prev,
+                    conflictResolution: e.target.value as AppSettings['conflictResolution']
+                  }))
+                }
+                className="w-full px-2.5 py-2 rounded-md bg-raised border border-line text-xs text-text focus:outline-none focus:border-accent/60 cursor-pointer"
+              >
+                <option value="ask" className="bg-page">Ask me every time</option>
+                <option value="local" className="bg-page">Prefer this device</option>
+                <option value="remote" className="bg-page">Prefer cloud</option>
+                <option value="merge" className="bg-page">Keep both versions</option>
+              </select>
+              <p className="text-[11px] text-faint mt-1">
+                How to resolve conflicting changes when two devices have diverged.
+                Applies immediately.
+              </p>
+            </div>
+
             <button
               onClick={savePrefs}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer"
@@ -773,6 +828,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {prefsMsg && <p className="text-[11px] text-success">{prefsMsg}</p>}
           </section>
         </div>
+
+        {showImport && (
+          <Suspense fallback={null}>
+            <ImportModal
+              onImportAppData={onImportAppData}
+              onImportPlans={onImportPlans}
+              onClose={() => setShowImport(false)}
+            />
+          </Suspense>
+        )}
       </div>
     </div>
   );

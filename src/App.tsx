@@ -9,6 +9,7 @@ import {
   loadAppData,
   saveAppData,
   logStudyActivity,
+  normalizeAppData,
   emptyPlanProgress,
   emptyQuestState,
   syncMinuteQuests,
@@ -20,7 +21,7 @@ import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
 import {
   sendDailyReminderNotification,
-  playChime,
+  playAlarm,
   notifyFocusComplete
 } from './utils/notifications';
 import {
@@ -195,6 +196,7 @@ export default function App() {
       const minute = now.getMinutes();
       // Fire once per 2-hour slot, on the first minute of the hour.
       if (minute === 0 && hour >= 5 && hour <= 23 && hour % 2 === 1) {
+        void playAlarm(); // audible in-app fallback alongside the OS notification
         sendDailyReminderNotification(activePhase, appData.global.streak, activePlan.name);
       }
     }, 60000);
@@ -302,6 +304,44 @@ export default function App() {
       };
     });
   }, [handleUpdateData]);
+
+  /** Restore a full JSON backup (Import flow). */
+  const handleImportAppData = useCallback(
+    (data: Partial<AppData>) => {
+      handleStateReload(normalizeAppData(data));
+    },
+    [handleStateReload]
+  );
+
+  /** Add imported plans (or replace everything with them). */
+  const handleImportPlans = useCallback(
+    (plans: Plan[], replaceAll: boolean) => {
+      handleUpdateData((prev) => {
+        if (replaceAll) {
+          return {
+            ...prev,
+            customPlans: plans,
+            activePlanId: plans[0]?.id ?? prev.activePlanId,
+            activePlanUpdatedAt: Date.now(),
+            progressByPlan: {}
+          };
+        }
+        // Collision-safe add: re-id any import that clashes with an existing plan.
+        const existingIds = new Set(prev.customPlans.map((p) => p.id));
+        const toAdd = plans.map((p) =>
+          existingIds.has(p.id)
+            ? { ...p, id: `${p.id}-imported-${Date.now().toString(36)}` }
+            : p
+        );
+        return {
+          ...prev,
+          customPlans: [...prev.customPlans, ...toAdd],
+          ...(toAdd[0] ? { activePlanId: toAdd[0].id, activePlanUpdatedAt: Date.now() } : {})
+        };
+      });
+    },
+    [handleUpdateData]
+  );
 
   /** Mutates only the active plan's progress object. */
   const updateProgress = useCallback((mutate: (prev: PlanProgress) => PlanProgress) => {
@@ -485,7 +525,7 @@ export default function App() {
     if (focusCompletedRef.current === f.endsAtMs) return;
     focusCompletedRef.current = f.endsAtMs;
 
-    playChime();
+    void playAlarm();
     if ((f.variant ?? 'study') === 'study' && activePhase) {
       const minutes = Math.max(1, Math.round(f.durationSec / 60));
       notifyFocusComplete(
@@ -507,7 +547,7 @@ export default function App() {
     if (!s || s.endsAtMs === null || nowMs < s.endsAtMs) return;
     if (stepExpiredRef.current === s.endsAtMs) return;
     stepExpiredRef.current = s.endsAtMs;
-    playChime();
+    void playAlarm();
   }, [nowMs, timersBlob.step]);
 
   // Focus timer that finished while the app was fully closed: log once on load.
@@ -987,6 +1027,8 @@ export default function App() {
             onClose={() => setShowSettingsModal(false)}
             onOpenAuthModal={() => setShowAuthModal(true)}
             onApplyDemoSetup={handleApplyDemoSetup}
+            onImportAppData={handleImportAppData}
+            onImportPlans={handleImportPlans}
           />
         )}
       </Suspense>

@@ -87,22 +87,54 @@ export function sendTestNotification(activePhase: Phase, streak: number, planNam
   }
 }
 
-/** Short two-note chime when a focus session finishes. Silent if audio is unavailable. */
-export function playChime(): void {
+/** One scheduled tone of the timer-expiry alarm. */
+export interface AlarmBeep {
+  frequencyHz: number;
+  startOffsetSec: number;
+  durationSec: number;
+}
+
+/**
+ * Three rising beeps (E5 → A5 → C6). Rising pitch reads as "finished well"
+ * rather than an error buzz; the whole pattern stays under 1.5s so it is
+ * noticeable without nagging.
+ */
+export function buildAlarmBeeps(): AlarmBeep[] {
+  return [
+    { frequencyHz: 659.25, startOffsetSec: 0, durationSec: 0.16 },
+    { frequencyHz: 880, startOffsetSec: 0.22, durationSec: 0.16 },
+    { frequencyHz: 1046.5, startOffsetSec: 0.44, durationSec: 0.28 }
+  ];
+}
+
+/** Louder triple-beep when a focus/break timer hits zero. Safe to call anywhere. */
+export async function playAlarm(): Promise<void> {
   try {
     const audioCtx = new (window.AudioContext ||
       (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-    osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.15);
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.5);
+    // Background tabs suspend audio contexts; resume() unlocks them because
+    // starting the timer was a user gesture.
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    const t0 = audioCtx.currentTime + 0.02;
+    for (const beep of buildAlarmBeeps()) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(beep.frequencyHz, t0 + beep.startOffsetSec);
+      gain.gain.setValueAtTime(0.0001, t0 + beep.startOffsetSec);
+      gain.gain.exponentialRampToValueAtTime(
+        0.35,
+        t0 + beep.startOffsetSec + 0.015
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        t0 + beep.startOffsetSec + beep.durationSec
+      );
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(t0 + beep.startOffsetSec);
+      osc.stop(t0 + beep.startOffsetSec + beep.durationSec + 0.02);
+    }
   } catch {
     // Audio not available
   }

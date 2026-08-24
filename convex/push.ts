@@ -53,11 +53,10 @@ export const sendPush = internalAction({
       return { ok: true };
     } catch (err: unknown) {
       const status = (err as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) {
-        return { ok: false, remove: true };
-      }
-      console.error('Push failed:', err);
-      return { ok: false, remove: false };
+      console.error(`Push failed (${status ?? 'unknown'}):`, err);
+      // Surface the gateway status so reminderPolicy can classify the
+      // failure (gone vs auth vs transient) and decide whether to retry.
+      return { ok: false, status };
     }
   }
 });

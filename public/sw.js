@@ -1,9 +1,11 @@
-const CACHE_NAME = 'go-tracker-pwa-v5';
+const CACHE_NAME = 'go-tracker-pwa-v6';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icon.svg'
+  '/icon.svg',
+  '/icon-192.png',
+  '/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -109,7 +111,10 @@ self.addEventListener('push', (event) => {
     badge: payload.badge || '/icon-192.png',
     tag: payload.tag || 'daily-reminder',
     data: payload.data || { url: '/' },
-    vibrate: [100, 50, 100]
+    vibrate: [200, 100, 200, 100, 200],
+    // Explicitly non-silent: the platform plays its default alert sound.
+    silent: false,
+    requireInteraction: false
   };
 
   event.waitUntil(self.registration.showNotification(title, options));

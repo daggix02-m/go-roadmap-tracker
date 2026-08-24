@@ -46,7 +46,13 @@ export default defineSchema({
     /** IANA time-zone, e.g. 'Africa/Addis_Ababa'. */
     tz: v.string(),
     /** Human-readable current goal shown in the push, e.g. "Phase 7 — Maps". */
-    activePhaseLabel: v.optional(v.string())
+    activePhaseLabel: v.optional(v.string()),
+    /** Consecutive failed cron rounds — schedule is dropped at the cap. */
+    failCount: v.optional(v.number()),
+    /** Last failure kind: 'gone' | 'auth' | 'transient'. */
+    lastError: v.optional(v.string()),
+    /** When the last failure happened (epoch ms) — drives UI staleness. */
+    lastFailedAt: v.optional(v.number())
   })
     .index('by_user', ['userId'])
     .index('by_next_fire', ['nextFireAt'])

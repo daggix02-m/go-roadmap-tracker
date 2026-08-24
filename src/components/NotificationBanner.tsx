@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
-import { Bell, BellOff, Check, Clock, Download, Send } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Bell, BellOff, Check, Clock, Download, Send, BellMinus, AlertTriangle } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
 import { AppSettings, Phase } from '../types';
 import {
   isNotificationSupported,
   requestNotificationPermission,
-  sendTestNotification
+  sendTestNotification,
+  playAlarm
 } from '../utils/notifications';
 import { usePushSubscription } from '../utils/usePushSubscription';
 
@@ -36,6 +39,33 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
 
   const push = usePushSubscription();
   const supported = isNotificationSupported();
+  // Server-side schedule health (null while signed out / loading).
+  const reminderStatus = useQuery(
+    api.reminders.reminderStatus,
+    push.subscribed ? undefined : 'skip'
+  );
+
+  // Surface silent server-side failures: the cron retries 5× before giving
+  // up, so any recorded failure means delivery is currently broken.
+  const serverBroken =
+    reminderStatus?.scheduled &&
+    !!reminderStatus.lastError &&
+    reminderStatus.lastError !== 'gone';
+
+  const handleDisableReminders = async () => {
+    await push.unsubscribe();
+    onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: false }));
+  };
+
+  const handleResubscribe = async () => {
+    if (push.needsInstall) return;
+    const phaseLabel = `Phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`;
+    const tz = settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // A fresh PushManager subscription is generated under the CURRENT VAPID
+    // key, repairing schedules broken by key changes or stale endpoints.
+    await push.unsubscribe();
+    await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
+  };
 
   const handleEnableNotification = async () => {
     // iOS non-installed → guide to install first.
@@ -66,6 +96,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
 
   const handleTestNotification = () => {
     setIsTesting(true);
+    playAlarm().catch(() => {});
     const sent = sendTestNotification(activePhase, streak, planName);
     if (sent) {
       setTestSuccess(true);
@@ -93,13 +124,13 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
             <p className="font-medium text-text">Study reminders</p>
             <p className="text-xs text-muted leading-relaxed">
               {isEnabled
-                ? `Every 2 hours, 5 AM – 11 PM (your time). Next up: phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}.`
-                : 'Get a nudge every 2 hours (5 AM – 11 PM) to keep your streak alive.'}
+                ? `Every 2 hours, 5 AM – 11 PM (your time), with your device's alert sound. Next up: phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}.`
+                : 'Get a nudge every 2 hours (5 AM – 11 PM) with a sound to keep your streak alive.'}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
           {permission === 'granted' ? (
             <>
               <div className="flex items-center gap-1.5 bg-raised border border-line rounded-md px-2 py-1.5">
@@ -121,6 +152,27 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
                     <Send className="w-3.5 h-3.5" /> Test
                   </span>
                 )}
+              </button>
+
+              {serverBroken && (
+                <button
+                  onClick={() => void handleResubscribe()}
+                  disabled={push.loading}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-warning/40 bg-warning/5 text-warning text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Reminders not arriving — repair
+                </button>
+              )}
+
+              <button
+                onClick={() => void handleDisableReminders()}
+                disabled={push.loading}
+                aria-label="Turn off reminders"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-line hover:border-danger/40 hover:text-danger text-muted text-xs font-medium transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
+              >
+                <BellMinus className="w-3.5 h-3.5" />
+                Turn off
               </button>
             </>
           ) : push.needsInstall ? (

@@ -6,6 +6,7 @@ import { getAuthUserId } from '@convex-dev/auth/server';
 import { internalAction, internalQuery, internalMutation, query, mutation } from './_generated/server';
 import { internal } from './_generated/api';
 import { v } from 'convex/values';
+import { evaluateReminderRound } from './reminderPolicy';
 
 // ---------------------------------------------------------------------------
 // Reminder schedule model
@@ -160,6 +161,20 @@ export const removeSchedule = internalMutation({
   }
 });
 
+/** Record a failed round — the schedule stays for the next retry window. */
+export const markScheduleRetry = internalMutation({
+  args: {
+    scheduleId: v.id('reminderSchedule'),
+    failCount: v.number(),
+    lastError: v.string(),
+    lastFailedAt: v.number()
+  },
+  handler: async (ctx, args) => {
+    const { scheduleId, ...patch } = args;
+    await ctx.db.patch(scheduleId, patch);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Client-facing
 // ---------------------------------------------------------------------------
@@ -169,6 +184,32 @@ export const getVapidKey = query({
   args: {},
   handler: async () => {
     return process.env.VAPID_PUBLIC_KEY ?? null;
+  }
+});
+
+/**
+ * Server-side reminder health for the signed-in user — drives the status
+ * line in the reminder banner ("next at HH:MM" vs "needs repair").
+ */
+export const reminderStatus = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+    const sched = await ctx.db
+      .query('reminderSchedule')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .order('desc')
+      .first();
+    if (!sched) return { scheduled: false as const };
+    return {
+      scheduled: true as const,
+      nextFireAt: sched.nextFireAt,
+      tz: sched.tz,
+      failCount: sched.failCount ?? 0,
+      lastError: sched.lastError,
+      lastFailedAt: sched.lastFailedAt
+    };
   }
 });
 
@@ -256,22 +297,22 @@ export const unsubscribe = mutation({
 // Cron-triggered orchestration (called by cron interval via api.*)
 // ---------------------------------------------------------------------------
 
-/** Scans due schedules, sends pushes, advances or removes. */
+/** Scans due schedules, sends pushes, then advances / retries / removes. */
 export const triggerReminders = internalAction({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-      const due = await ctx.runQuery(internal.reminders.getDue, { now });
+    const due = await ctx.runQuery(internal.reminders.getDue, { now });
 
     for (const entry of due) {
       const subs = await ctx.runQuery(internal.reminders.getSubscriptions, {
         userId: entry.userId
       });
 
-      let anyActive = false;
-
-      for (const sub of subs) {
-        const result = await ctx.runAction(internal.push.sendPush, {
+      const attempts: { index: number; result: { ok: boolean; status?: number } }[] = [];
+      for (let i = 0; i < subs.length; i++) {
+        const sub = subs[i];
+        const result = (await ctx.runAction(internal.push.sendPush, {
           endpoint: sub.endpoint,
           subscriptionJson: sub.subscriptionJson,
           title: 'Time to study! 📚',
@@ -279,21 +320,33 @@ export const triggerReminders = internalAction({
             ? `Keep going — next up: ${entry.activePhaseLabel}. Open the app and tackle your next step.`
             : "Don't break your streak — open the app and tackle your next step.",
           tag: 'daily-reminder'
-        });
-
-        if (result.remove) {
-          await ctx.runMutation(internal.reminders.removeSubscription, {
-            endpoint: sub.endpoint
-          });
-        } else if (result.ok) {
-          anyActive = true;
-        }
+        })) as { ok: boolean; status?: number };
+        attempts.push({ index: i, result });
       }
 
-      if (anyActive) {
+      const round = evaluateReminderRound(
+        attempts.map((a) => a.result),
+        { failCount: entry.failCount }
+      );
+
+      // Delete endpoints the gateway reported as permanently gone.
+      for (const idx of round.removeEndpoints ?? []) {
+        await ctx.runMutation(internal.reminders.removeSubscription, {
+          endpoint: subs[idx].endpoint
+        });
+      }
+
+      if (round.action === 'advance') {
         await ctx.runMutation(internal.reminders.advanceSchedule, {
           userId: entry.userId,
           now
+        });
+      } else if (round.action === 'retry') {
+        await ctx.runMutation(internal.reminders.markScheduleRetry, {
+          scheduleId: entry._id,
+          failCount: round.failCount,
+          lastError: round.lastError ?? 'transient',
+          lastFailedAt: now
         });
       } else {
         await ctx.runMutation(internal.reminders.removeSchedule, {
