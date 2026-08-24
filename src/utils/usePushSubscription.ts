@@ -73,7 +73,18 @@ export function usePushSubscription(): PushState & PushActions {
       // error" when the key is invalid, with no actionable detail.
       const validation = validateVapidKey(vapidKey);
       if (!validation.valid) {
-        console.error('Push subscribe aborted:', validation.reason);
+        console.error('[Push] Subscribe aborted — invalid VAPID key:', validation.reason);
+        return;
+      }
+
+      // Check notification permission — PushManager.subscribe() requires
+      // notification permission to be granted. Some browsers throw AbortError
+      // if permission is 'denied' or 'default' instead of 'granted'.
+      if ('Notification' in window && Notification.permission !== 'granted') {
+        console.warn(
+          `[Push] Subscribe blocked — notification permission is '${Notification.permission}'. ` +
+          'Request permission before calling subscribe().'
+        );
         return;
       }
 
@@ -83,12 +94,13 @@ export function usePushSubscription(): PushState & PushActions {
 
         // Diagnostic: log the correct scope from the registration (not the controller)
         const swController = navigator.serviceWorker?.controller;
+        const notifPerm = 'Notification' in window ? Notification.permission : 'unavailable';
         console.log('[Push] Starting subscription attempt', {
           vapidKeyLength: vapidKey?.length,
-          notificationPermission: 'Notification' in window ? Notification.permission : 'unavailable',
+          notificationPermission: notifPerm,
           swActive: !!swController,
           swState: swController?.state ?? 'none',
-          swScope: reg.scope
+          swScope: reg.scope,
         });
 
         // Ensure the service worker is fully activated before subscribing.
@@ -137,23 +149,31 @@ export function usePushSubscription(): PushState & PushActions {
         });
         setSubscribed(true);
       } catch (err) {
-        // Log the full error message — "AbortError: Registration failed -
-        // push service error" usually means invalid VAPID keys or the push
-        // service is unavailable (offline, blocked by browser settings).
         const msg = err instanceof Error ? err.message : String(err);
         const name = err instanceof Error ? err.name : 'unknown';
         console.error(`[Push] Subscribe failed: ${name}: ${msg}`, err);
 
-        // Extra diagnostics for the most common failure
+        // Actionable diagnostics for the most common failure modes
         if (name === 'AbortError') {
-          console.error('[Push] AbortError通常意味着:');
-          console.error('  1. VAPID密钥不匹配 (客户端和服务端不同)');
-          console.error('  2. 推送通知被浏览器/系统阻止');
-          console.error('  3. 推送服务不可用 (离线或被限制)');
-          console.error('[Push] 请检查:');
-          console.error('  - Convex环境变量 VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_EMAIL 是否已设置');
-          console.error('  - 浏览器通知权限是否已授予');
-          console.error('  - 是否在HTTPS环境下 (推送需要HTTPS)');
+          const notifPerm = 'Notification' in window ? Notification.permission : 'unavailable';
+          console.group('[Push] AbortError diagnostics');
+          console.error('Notification permission:', notifPerm);
+          console.error('VAPID key length:', vapidKey?.length ?? 'null');
+          console.error('Service worker active:', !!navigator.serviceWorker?.controller);
+          console.error('Secure context:', window.isSecureContext);
+          console.error('');
+          console.error('Common causes:');
+          console.error('  1. Notification permission not granted (current:', notifPerm + ')');
+          console.error('  2. Push notifications blocked at OS level (check system settings)');
+          console.error('  3. VAPID keys mismatch between client and server (verify with validateVapidKeys)');
+          console.error('  4. Push service temporarily unavailable (retry later)');
+          console.error('');
+          console.error('Fix steps:');
+          console.error('  - Ensure notification permission is "granted" before subscribing');
+          console.error('  - Check OS notification settings for this browser');
+          console.error('  - Verify VAPID keys: call api.push.validateVapidKeys from Convex');
+          console.error('  - Try in a different browser to isolate the issue');
+          console.groupEnd();
         }
       } finally {
         setLoading(false);

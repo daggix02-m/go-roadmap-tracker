@@ -44,6 +44,8 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     api.reminders.reminderStatus,
     push.subscribed ? undefined : 'skip'
   );
+  // VAPID key health — surfaces configuration issues before the user attempts to subscribe.
+  const vapidHealth = useQuery(api.reminders.validateVapidKeys);
 
   // Surface silent server-side failures: the cron retries 5× before giving
   // up, so any recorded failure means delivery is currently broken.
@@ -126,6 +128,19 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
 
   return (
     <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 mt-4">
+      {/* VAPID key configuration warning */}
+      {vapidHealth && !vapidHealth.configured && (
+        <div className="mb-2 p-2.5 rounded-lg bg-danger/5 border border-danger/20 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+          <div className="text-xs text-danger">
+            <p className="font-medium">Push notifications misconfigured</p>
+            <p className="mt-0.5 text-danger/80">
+              {vapidHealth.error || 'VAPID keys not set. Run the setup commands in your terminal.'}
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="p-3.5 rounded-lg bg-surface border border-line flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex items-start gap-3 min-w-0">
           <div
@@ -204,8 +219,9 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
             <button
               id="enable-notification-btn"
               onClick={handleEnableNotification}
-              disabled={push.loading}
-              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap disabled:opacity-50"
+              disabled={push.loading || (vapidHealth !== undefined && !vapidHealth.configured)}
+              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              title={vapidHealth && !vapidHealth.configured ? 'Push notifications misconfigured — check setup' : undefined}
             >
               {push.loading ? 'Setting up…' : 'Enable reminders'}
             </button>

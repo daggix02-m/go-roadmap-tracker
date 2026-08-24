@@ -188,6 +188,78 @@ export const getVapidKey = query({
 });
 
 /**
+ * Validate that the VAPID keys are properly configured.
+ * Returns diagnostic information about the key configuration so the client
+ * can surface setup issues before the user attempts to subscribe.
+ */
+export const validateVapidKeys = query({
+  args: {},
+  handler: async () => {
+    const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
+    const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+    const vapidEmail = process.env.VAPID_EMAIL;
+
+    const result: {
+      configured: boolean;
+      publicKeyPresent: boolean;
+      privateKeyPresent: boolean;
+      emailPresent: boolean;
+      publicKeyLength: number | null;
+      error?: string;
+    } = {
+      configured: false,
+      publicKeyPresent: !!vapidPublicKey,
+      privateKeyPresent: !!vapidPrivateKey,
+      emailPresent: !!vapidEmail,
+      publicKeyLength: null,
+    };
+
+    if (!vapidPublicKey || !vapidPrivateKey || !vapidEmail) {
+      result.error = 'Missing VAPID environment variables. Run: npx convex env set VAPID_PUBLIC_KEY <key>';
+      return result;
+    }
+
+    // Validate public key format (base64url, 65 bytes when decoded)
+    try {
+      const stripped = vapidPublicKey.replace(/=+$/, '');
+      const base64 = stripped.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+      // Decode base64 to check length
+      const chars = padded.split('');
+      const bytes: number[] = [];
+      for (let i = 0; i < chars.length; i += 4) {
+        const a = chars[i].charCodeAt(0);
+        const b = chars[i + 1].charCodeAt(0);
+        const c = chars[i + 2].charCodeAt(0);
+        const d = chars[i + 3].charCodeAt(0);
+        const n = ((a << 18) | (b << 12) | (c << 6) | d) & 0xffffff;
+        bytes.push((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
+      }
+      // Remove padding bytes
+      const paddingCount = (padded.match(/=+$/) || [''])[0].length;
+      const decodedLength = bytes.length - (paddingCount || 0);
+      result.publicKeyLength = decodedLength;
+
+      if (decodedLength !== 65) {
+        result.error = `Public key decodes to ${decodedLength} bytes, expected 65. Regenerate with: npx web-push generate-vapid-keys`;
+        return result;
+      }
+
+      if (bytes[0] !== 0x04) {
+        result.error = `Public key does not start with 0x04 (uncompressed EC point). First byte: 0x${bytes[0].toString(16)}`;
+        return result;
+      }
+    } catch {
+      result.error = 'Public key is not valid base64. Regenerate with: npx web-push generate-vapid-keys';
+      return result;
+    }
+
+    result.configured = true;
+    return result;
+  }
+});
+
+/**
  * Server-side reminder health for the signed-in user — drives the status
  * line in the reminder banner ("next at HH:MM" vs "needs repair").
  */
