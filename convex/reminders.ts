@@ -224,15 +224,16 @@ export const validateVapidKeys = query({
       const stripped = vapidPublicKey.replace(/=+$/, '');
       const base64 = stripped.replace(/-/g, '+').replace(/_/g, '/');
       const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-      // Decode base64 to check length
-      const chars = padded.split('');
+
+      // Proper base64 decode: map characters to 6-bit values
+      const lookup = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
       const bytes: number[] = [];
-      for (let i = 0; i < chars.length; i += 4) {
-        const a = chars[i].charCodeAt(0);
-        const b = chars[i + 1].charCodeAt(0);
-        const c = chars[i + 2].charCodeAt(0);
-        const d = chars[i + 3].charCodeAt(0);
-        const n = ((a << 18) | (b << 12) | (c << 6) | d) & 0xffffff;
+      for (let i = 0; i < padded.length; i += 4) {
+        const a = lookup.indexOf(padded[i]);
+        const b = lookup.indexOf(padded[i + 1]);
+        const c = padded[i + 2] === '=' ? 0 : lookup.indexOf(padded[i + 2]);
+        const d = padded[i + 3] === '=' ? 0 : lookup.indexOf(padded[i + 3]);
+        const n = (a << 18) | (b << 12) | (c << 6) | d;
         bytes.push((n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff);
       }
       // Remove padding bytes
