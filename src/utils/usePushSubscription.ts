@@ -99,8 +99,11 @@ export function usePushSubscription(): PushState & PushActions {
       const sub = await reg.pushManager.getSubscription();
       if (sub) {
         await sub.unsubscribe();
-        await removeSubscription();
       }
+      // Always call the Convex mutation to delete server-side schedule,
+      // even when the browser subscription is already gone (e.g. cleared
+      // browser data). The mutation is idempotent — safe with no records.
+      await removeSubscription();
       setSubscribed(false);
     } catch (err) {
       console.error('Push unsubscribe failed:', err);

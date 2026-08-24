@@ -131,7 +131,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
-          {permission === 'granted' ? (
+          {isEnabled ? (
             <>
               <div className="flex items-center gap-1.5 bg-raised border border-line rounded-md px-2 py-1.5">
                 <Clock className="w-3.5 h-3.5 text-muted" />
