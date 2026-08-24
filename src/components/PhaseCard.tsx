@@ -318,21 +318,22 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
                                   }
                                   aria-label="Change step duration"
                                   aria-expanded={openDurationKey === key}
+                                  aria-haspopup="listbox"
                                   className="min-h-9 min-w-9 flex items-center justify-center rounded text-faint hover:text-text transition-colors cursor-pointer"
                                 >
                                   <ChevronDown className="w-3 h-3" />
                                 </button>
                                 {openDurationKey === key && (
                                   <div
-                                    role="menu"
+                                    role="listbox"
                                     aria-label="Step duration presets"
                                     className="absolute right-0 top-full mt-1 z-10 py-1 rounded-md bg-surface border border-line shadow-lg grid grid-cols-3 gap-px w-36"
                                   >
                                     {STEP_DURATION_PRESETS.map((preset) => (
                                       <button
                                         key={preset.sec}
-                                        role="menuitemradio"
-                                        aria-checked={effectiveDuration === preset.sec}
+                                        role="option"
+                                        aria-selected={effectiveDuration === preset.sec}
                                         onClick={() => {
                                           stepTimerApi.setDuration(phase.id, idx, preset.sec);
                                           setOpenDurationKey(null);

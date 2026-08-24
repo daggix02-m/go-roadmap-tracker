@@ -151,7 +151,7 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, o
       {open && (
         <div
           ref={panelRef}
-          role="menu"
+          role="group"
           aria-label="Account actions"
           className="absolute right-0 top-full mt-2 w-56 py-1 rounded-lg bg-surface border border-line shadow-lg animate-slide-up z-50"
         >
@@ -164,7 +164,6 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, o
 
           {/* Actions */}
           <button
-            role="menuitem"
             onClick={() => { setOpen(false); onOpenSettings(); }}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
           >
@@ -172,7 +171,6 @@ export const AccountButton: React.FC<AccountButtonProps> = ({ onOpenAuthModal, o
             Settings
           </button>
           <button
-            role="menuitem"
             onClick={() => { handleSignOut(); }}
             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
           >

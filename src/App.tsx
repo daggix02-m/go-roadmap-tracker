@@ -42,6 +42,7 @@ import {
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { HomeWidgetCard } from './components/HomeWidgets/WidgetSwitcher';
 import { DailyQuests } from './components/DailyQuests';
+import { MobileBottomBar } from './components/MobileBottomBar';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 import { useSync } from './utils/useSync';
 import { THEME_CHROME_COLOR } from './utils/themes';
@@ -597,11 +598,9 @@ export default function App() {
   const handleDeletePlan = (planId: string) => {
     const target = getAllPlans(appData).find((p) => p.id === planId);
     if (!target || target.builtIn) return;
-    if (!window.confirm(`Delete "${target.name}" and its progress? This cannot be undone.`)) {
-      return;
-    }
-    // Tombstone instead of hard delete: sync unions plans by id, so a plain
-    // absence would be resurrected by any stale remote/cloud copy. The
+    // Confirmation happens in the PlanSwitcher (two-step button); this deletes
+    // directly. Tombstone instead of hard delete: sync unions plans by id, so a
+    // plain absence would be resurrected by any stale remote/cloud copy. The
     // tombstone makes mergePlans treat the deletion as authoritative.
     handleUpdateData((prev) => {
       const next = deleteCustomPlan(prev, planId);
@@ -609,7 +608,7 @@ export default function App() {
     });
   };
 
-  const handleImportPlanFile = (file: File) => {
+  const handleImportPlanFile = (file: File, onError?: (message: string) => void) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -621,7 +620,7 @@ export default function App() {
             : parsed;
         const plan = validatePlan(candidate);
         if (!plan) {
-          alert('Invalid plan file format.');
+          onError?.('Invalid plan file format.');
           return;
         }
         handleUpdateData((prev) => ({
@@ -633,7 +632,7 @@ export default function App() {
         setFilter({ section: 'ALL', searchQuery: '' });
         setOpenCardId(null);
       } catch {
-        alert('Failed to parse plan file.');
+        onError?.('Failed to parse plan file.');
       }
     };
     reader.readAsText(file);
@@ -925,13 +924,30 @@ export default function App() {
       </main>
 
       {activePhase && (
-        <DailyFocusBar
-          activePhase={activePhase}
-          totalPhases={activePlan.phases.length}
-          completedCount={progress.completedPhases.length}
-          onJumpToActive={handleJumpToActive}
-          onOpenTimer={() => setShowTimerModal(true)}
-        />
+        <>
+          {/* Desktop keeps the full focus bar */}
+          <div className="hidden md:block">
+            <DailyFocusBar
+              activePhase={activePhase}
+              totalPhases={activePlan.phases.length}
+              completedCount={progress.completedPhases.length}
+              onJumpToActive={handleJumpToActive}
+              onOpenTimer={() => setShowTimerModal(true)}
+            />
+          </div>
+          {/* Mobile: one-tap Timer / Cheatsheet / Stats bar */}
+          <MobileBottomBar
+            activePhase={activePhase}
+            totalPhases={activePlan.phases.length}
+            completedCount={progress.completedPhases.length}
+            onJumpToActive={handleJumpToActive}
+            onOpenTimer={() => setShowTimerModal(true)}
+            onOpenStats={() => setShowStatsModal(true)}
+            onOpenCheatsheet={
+              activePlan.cheatsheetId ? () => setShowCheatsheetModal(true) : undefined
+            }
+          />
+        </>
       )}
 
       <Suspense fallback={null}>

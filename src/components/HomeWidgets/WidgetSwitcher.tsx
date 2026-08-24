@@ -74,6 +74,7 @@ export const HomeWidgetCard: React.FC<HomeWidgetCardProps> = ({ widget, data, on
             onClick={() => setMenuOpen((o) => !o)}
             aria-label="Change activity widget"
             aria-expanded={menuOpen}
+            aria-haspopup="listbox"
             title="Change this widget"
             className="flex items-center gap-1 px-1.5 py-1 rounded-md text-[11px] font-mono text-faint hover:text-text hover:bg-hover transition-colors cursor-pointer"
           >
@@ -83,15 +84,15 @@ export const HomeWidgetCard: React.FC<HomeWidgetCardProps> = ({ widget, data, on
 
           {menuOpen && (
             <div
-              role="menu"
+              role="listbox"
               aria-label="Widget options"
               className="absolute right-0 top-full mt-1 z-40 w-60 bg-raised border border-line rounded-lg shadow-lg py-1 animate-fade-in"
             >
               {WIDGET_ORDER.map((id) => (
                 <button
                   key={id}
-                  role="menuitemradio"
-                  aria-checked={id === widget}
+                  role="option"
+                  aria-selected={id === widget}
                   onClick={() => {
                     onChangeWidget(id);
                     setMenuOpen(false);

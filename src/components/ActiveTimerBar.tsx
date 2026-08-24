@@ -36,7 +36,7 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
 
   return (
     <div className="bg-surface/95 backdrop-blur-md border-b border-line">
-      <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 py-2 flex items-center gap-3">
+      <div className="max-w-3xl lg:max-w-5xl mx-auto px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-3">
         <button
           onClick={onOpenModal}
           className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"

@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Download, RotateCcw, Upload, X } from 'lucide-react';
 import { AppData, Plan, PlanProgress } from '../types';
 import { getActivityHistory, formatStudyMinutes, getProgressSummary } from '../data/progress';
@@ -24,6 +24,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
 }) => {
   useScrollLock(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const summary = getProgressSummary(plan, progress);
   const activity = getActivityHistory(appData.global, 14);
@@ -48,7 +51,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           const restored = normalizeAppData(parsed);
           saveAppData(restored);
           onUpdateData(restored);
-          alert('Backup restored successfully.');
+          setNotice({ ok: true, text: 'Backup restored successfully.' });
           return;
         }
 
@@ -87,13 +90,13 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           });
           saveAppData(merged);
           onUpdateData(merged);
-          alert('Legacy Go roadmap backup restored.');
+          setNotice({ ok: true, text: 'Legacy Go roadmap backup restored.' });
           return;
         }
 
-        alert('Invalid backup file format.');
+        setNotice({ ok: false, text: 'Invalid backup file format.' });
       } catch {
-        alert('Failed to parse backup file.');
+        setNotice({ ok: false, text: 'Failed to parse backup file.' });
       }
       // Allow re-selecting the same file after a failed attempt
       e.target.value = '';
@@ -101,12 +104,11 @@ export const StatsModal: React.FC<StatsModalProps> = ({
     reader.readAsText(file);
   };
 
-  const handleResetData = () => {
-    if (
-      window.confirm(
-        'This will permanently erase ALL plans, phase progress, checkmarks, notes, and streak history. Continue?'
-      )
-    ) {
+  /** Two-step reset: first tap arms, second tap (within 5s) wipes everything. */
+  const handleResetClick = () => {
+    if (confirmReset) {
+      if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+      setConfirmReset(false);
       const resetState = normalizeAppData({
         version: 2,
         activePlanId: 'go-roadmap',
@@ -118,8 +120,18 @@ export const StatsModal: React.FC<StatsModalProps> = ({
       saveAppData(resetState);
       onUpdateData(resetState);
       onClose();
+      return;
     }
+    setConfirmReset(true);
+    if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+    confirmResetTimer.current = setTimeout(() => setConfirmReset(false), 5000);
   };
+
+  useEffect(() => {
+    return () => {
+      if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+    };
+  }, []);
 
   return (
     <div
@@ -266,13 +278,34 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           />
           <button
             id="reset-data-btn"
-            onClick={handleResetData}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-danger/30 text-danger/80 hover:text-danger hover:border-danger/60 text-xs font-medium transition-colors cursor-pointer"
+            onClick={handleResetClick}
+            aria-label={
+              confirmReset ? 'Confirm reset all data' : 'Reset all data'
+            }
+            title={
+              confirmReset
+                ? 'Tap again to permanently erase all data'
+                : 'Erase all plans, progress, and history'
+            }
+            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors cursor-pointer ${
+              confirmReset
+                ? 'border-danger bg-danger text-page'
+                : 'border-danger/30 text-danger/80 hover:text-danger hover:border-danger/60'
+            }`}
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            Reset all data
+            {confirmReset ? 'Tap again to confirm' : 'Reset all data'}
           </button>
         </div>
+
+        {notice && (
+          <p
+            className={`mt-3 text-[11px] ${notice.ok ? 'text-success' : 'text-danger'}`}
+            role={notice.ok ? 'status' : 'alert'}
+          >
+            {notice.text}
+          </p>
+        )}
       </div>
     </div>
   );

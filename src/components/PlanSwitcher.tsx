@@ -9,7 +9,7 @@ interface PlanSwitcherProps {
   onSelect: (planId: string) => void;
   onFork: (planId: string) => void;
   onDelete: (planId: string) => void;
-  onImportFile: (file: File) => void;
+  onImportFile: (file: File, onError?: (message: string) => void) => void;
   onCreate: () => void;
   onEdit: (planId: string) => void;
 }
@@ -27,6 +27,9 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  /** Plan whose delete button is armed (two-step confirm); null = none. */
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const confirmResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -51,15 +54,39 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
     };
   }, [isOpen]);
 
+  // Clear any armed delete state when the menu closes.
+  useEffect(() => {
+    if (!isOpen) setConfirmDeleteId(null);
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+    };
+  }, []);
+
   if (!activePlan) return null;
+
+  /** Two-step delete: first tap arms, second tap (within 3s) deletes. */
+  const handleDeleteClick = (planId: string) => {
+    if (confirmDeleteId === planId) {
+      if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+      setConfirmDeleteId(null);
+      onDelete(planId);
+      setIsOpen(false);
+      return;
+    }
+    setConfirmDeleteId(planId);
+    if (confirmResetTimer.current) clearTimeout(confirmResetTimer.current);
+    confirmResetTimer.current = setTimeout(() => setConfirmDeleteId(null), 3000);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
-    onImportFile(file);
     setFileError(null);
-    setIsOpen(false);
+    onImportFile(file, (message) => setFileError(message));
   };
 
   return (
@@ -69,7 +96,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
         id="plan-switcher-btn"
         onClick={() => setIsOpen((v) => !v)}
         aria-expanded={isOpen}
-        aria-haspopup="menu"
+        aria-haspopup="true"
         className="min-w-0 text-left cursor-pointer rounded-md -mx-1 px-1 py-0.5 hover:bg-hover transition-colors"
       >
         <span className="flex items-center gap-1.5 min-w-0">
@@ -88,7 +115,7 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
 
       {isOpen && (
         <div
-          role="menu"
+          role="group"
           aria-label="Switch plan"
           className="absolute top-full left-0 mt-2 w-72 max-h-[70dvh] overflow-y-auto bg-surface border border-line rounded-lg shadow-xl z-50 p-1.5 animate-fade-in"
         >
@@ -101,11 +128,11 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
               return (
                 <li key={plan.id} className="flex items-center gap-1">
                   <button
-                    role="menuitem"
                     onClick={() => {
                       onSelect(plan.id);
                       setIsOpen(false);
                     }}
+                    aria-current={isActive ? 'true' : undefined}
                     className={`flex-1 min-w-0 flex items-center gap-2 px-2 py-2 rounded-md text-left transition-colors cursor-pointer ${
                       isActive ? 'bg-hover' : 'hover:bg-hover'
                     }`}
@@ -128,7 +155,6 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                   </button>
 
                   <button
-                    role="menuitem"
                     aria-label={`Fork ${plan.name}`}
                     title={`Fork ${plan.name}`}
                     onClick={() => {
@@ -141,7 +167,6 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                   </button>
 
                   <button
-                    role="menuitem"
                     aria-label={`Edit ${plan.name}`}
                     title={
                       plan.builtIn
@@ -160,16 +185,28 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
                   {!plan.builtIn && (
                     <>
                       <button
-                        role="menuitem"
-                        aria-label={`Delete ${plan.name}`}
-                        title={`Delete ${plan.name}`}
-                        onClick={() => {
-                          onDelete(plan.id);
-                          setIsOpen(false);
-                        }}
-                        className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+                        aria-label={
+                          confirmDeleteId === plan.id
+                            ? `Confirm delete ${plan.name}`
+                            : `Delete ${plan.name}`
+                        }
+                        title={
+                          confirmDeleteId === plan.id
+                            ? 'Tap again to confirm'
+                            : `Delete ${plan.name}`
+                        }
+                        onClick={() => handleDeleteClick(plan.id)}
+                        className={`min-h-10 min-w-10 flex items-center justify-center rounded-md transition-colors cursor-pointer shrink-0 ${
+                          confirmDeleteId === plan.id
+                            ? 'bg-danger text-page'
+                            : 'text-muted hover:text-danger hover:bg-hover'
+                        }`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        {confirmDeleteId === plan.id ? (
+                          <Check className="w-3.5 h-3.5" />
+                        ) : (
+                          <Trash2 className="w-3.5 h-3.5" />
+                        )}
                       </button>
                     </>
                   )}
@@ -181,7 +218,6 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
           {/* Actions */}
           <div className="mt-1.5 pt-1.5 border-t border-line flex flex-col gap-0.5">
             <button
-              role="menuitem"
               onClick={() => {
                 onCreate();
                 setIsOpen(false);
@@ -192,7 +228,6 @@ export const PlanSwitcher: React.FC<PlanSwitcherProps> = ({
               New plan
             </button>
             <button
-              role="menuitem"
               onClick={() => fileInputRef.current?.click()}
               className="flex items-center gap-2 px-2 py-2 rounded-md text-xs font-medium text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer"
             >
