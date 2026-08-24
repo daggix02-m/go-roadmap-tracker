@@ -8,11 +8,42 @@ export const FALLBACK_PLAN: Plan = GO_PLAN;
 
 /** All plans available to the user: built-ins first, then custom plans. */
 export function getAllPlans(data: Pick<AppData, 'customPlans'>): Plan[] {
-  return [...BUILT_IN_PLANS, ...data.customPlans];
+  return [...BUILT_IN_PLANS, ...data.customPlans.filter((p) => !p.deleted)];
 }
 
 export function findPlan(data: Pick<AppData, 'customPlans'>, planId: string): Plan | undefined {
   return getAllPlans(data).find((p) => p.id === planId);
+}
+
+/**
+ * Deletes a custom plan by leaving a sync tombstone (`deleted: true`) in
+ * place — mergePlans treats a tombstone as authoritative, so stale copies on
+ * other devices or in the cloud can never resurrect the plan. Progress is
+ * dropped and an active plan falls back to the first built-in. Returns null
+ * when there is nothing to delete (built-ins are immutable source constants).
+ */
+export function deleteCustomPlan(
+  data: AppData,
+  planId: string,
+  now: number = Date.now()
+): AppData | null {
+  const target = data.customPlans.find((p) => p.id === planId);
+  if (!target || target.builtIn) return null;
+
+  const nextProgress = { ...data.progressByPlan };
+  delete nextProgress[planId];
+
+  return {
+    ...data,
+    customPlans: data.customPlans.map((p) =>
+      p.id === planId ? { ...p, deleted: true, lastModifiedAt: now } : p
+    ),
+    progressByPlan: nextProgress,
+    activePlanId:
+      data.activePlanId === planId ? BUILT_IN_PLANS[0].id : data.activePlanId,
+    activePlanUpdatedAt:
+      data.activePlanId === planId ? now : data.activePlanUpdatedAt
+  };
 }
 
 /** Resolves the active plan, falling back to the built-in Go roadmap. */

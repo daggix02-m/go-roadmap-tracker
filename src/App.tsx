@@ -12,7 +12,7 @@ import {
   emptyPlanProgress,
   getLocalDateString
 } from './utils/storage';
-import { BUILT_IN_PLANS, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
+import { BUILT_IN_PLANS, deleteCustomPlan, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
 import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
 import {
@@ -490,18 +490,12 @@ export default function App() {
     if (!window.confirm(`Delete "${target.name}" and its progress? This cannot be undone.`)) {
       return;
     }
+    // Tombstone instead of hard delete: sync unions plans by id, so a plain
+    // absence would be resurrected by any stale remote/cloud copy. The
+    // tombstone makes mergePlans treat the deletion as authoritative.
     handleUpdateData((prev) => {
-      const nextProgress = { ...prev.progressByPlan };
-      delete nextProgress[planId];
-      return {
-        ...prev,
-        customPlans: prev.customPlans.filter((p) => p.id !== planId),
-        progressByPlan: nextProgress,
-        activePlanId:
-          prev.activePlanId === planId ? BUILT_IN_PLANS[0].id : prev.activePlanId,
-        activePlanUpdatedAt:
-          prev.activePlanId === planId ? Date.now() : prev.activePlanUpdatedAt
-      };
+      const next = deleteCustomPlan(prev, planId);
+      return next ?? prev;
     });
   };
 
