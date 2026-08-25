@@ -111,8 +111,13 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
           </button>
         </div>
 
-        {/* Time display */}
-        <div className="w-full aspect-square max-w-[13rem] rounded-full border border-line flex flex-col items-center justify-center mb-6 bg-page">
+        {/* Time display — tap to pause/resume */}
+        <button
+          onClick={running ? onPause : expired ? undefined : onStart}
+          disabled={expired}
+          className="w-full aspect-square max-w-[13rem] rounded-full border border-line flex flex-col items-center justify-center mb-6 bg-page cursor-pointer transition-colors hover:border-accent/40 disabled:cursor-default"
+          aria-label={running ? 'Pause timer' : expired ? 'Timer finished' : 'Resume timer'}
+        >
           <span
             className={`font-mono text-5xl tracking-tight tabular-nums ${
               expired ? 'text-success' : running ? 'text-text' : 'text-text/80'
@@ -131,7 +136,7 @@ export const StudyTimerModal: React.FC<StudyTimerModalProps> = ({
                   ? 'On break'
                   : 'Break · paused'}
           </span>
-        </div>
+        </button>
 
         {/* Controls */}
         <div className="flex items-center gap-2 w-full max-w-xs justify-center">

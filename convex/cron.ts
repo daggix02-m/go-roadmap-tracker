@@ -10,3 +10,4 @@ import { internal } from './_generated/api';
 
 export const cron = cronJobs();
 cron.interval('trigger-reminders', { seconds: 60 }, internal.reminders.triggerReminders);
+cron.interval('trigger-expired-timers', { seconds: 60 }, internal.timerSchedule.triggerExpiredTimers);

@@ -55,5 +55,22 @@ export default defineSchema({
     lastFailedAt: v.optional(v.number())
   })
     .index('by_user', ['userId'])
-    .index('by_next_fire', ['nextFireAt'])
+    .index('by_next_fire', ['nextFireAt']),
+
+  // ---- Focus timer expiry schedule (push notification on completion) ----
+  timerSchedule: defineTable({
+    userId: v.id('users'),
+    /** When the timer expires (epoch ms). */
+    endsAtMs: v.number(),
+    /** Which kind of timer: 'focus' or 'step'. */
+    kind: v.union(v.literal('focus'), v.literal('step')),
+    /** Focus variant: 'study' or 'break'. */
+    variant: v.optional(v.union(v.literal('study'), v.literal('break'))),
+    /** Human-readable phase label for the notification body. */
+    phaseLabel: v.optional(v.string()),
+    /** Consecutive failed push rounds — schedule is dropped at the cap. */
+    failCount: v.optional(v.number())
+  })
+    .index('by_user', ['userId'])
+    .index('by_due', ['endsAtMs'])
 });

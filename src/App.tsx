@@ -45,6 +45,9 @@ import { DailyQuests } from './components/DailyQuests';
 import { MobileBottomBar } from './components/MobileBottomBar';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 import { useSync } from './utils/useSync';
+import { useMutation } from 'convex/react';
+import { useConvexAuth } from '@convex-dev/auth/react';
+import { api } from '../convex/_generated/api';
 import { THEME_CHROME_COLOR } from './utils/themes';
 
 // Heavy modals are lazy-loaded so they don't ship in the initial bundle.
@@ -89,6 +92,10 @@ export default function App() {
   const { syncing, lastSyncedAt, pushNow, syncedData } = useSync();
   // Honest sync status for the account menu indicator.
   const syncStatus = { syncing, lastSyncedAt };
+  // Timer schedule tracking (push notifications on expiry).
+  const { isAuthenticated } = useConvexAuth();
+  const startTimerTracking = useMutation(api.timerSchedule.startTracking);
+  const cancelTimerTracking = useMutation(api.timerSchedule.cancelTracking);
   // Flush pending local changes to the cloud BEFORE the session is torn down
   // — the sign-out effect can't push after the token is invalidated.
   const handleBeforeSignOut = useCallback(async () => {
@@ -411,16 +418,45 @@ export default function App() {
 
   const handleSelectFocusPreset = (durationSec: number, variant: 'study' | 'break') => {
     focusCompletedRef.current = null;
+    // Cancel any existing server-tracked timer when switching presets.
+    if (isAuthenticated) void cancelTimerTracking();
     updateFocusTimer((prev) => {
       const base = prev ?? createTimer('focus', durationSec);
       return { ...resetTimer(base, durationSec), variant };
     });
   };
 
-  const handleStartFocus = () => updateFocusTimer((t) => (t ? startTimer(t, Date.now()) : t));
-  const handlePauseFocus = () => updateFocusTimer((t) => (t ? pauseTimer(t, Date.now()) : t));
+  const handleStartFocus = () => {
+    updateFocusTimer((t) => {
+      if (!t) return t;
+      const started = startTimer(t, Date.now());
+      // Sync with server when signed in so cron can send push on expiry.
+      if (isAuthenticated && started.endsAtMs) {
+        const phaseLabel = activePhase
+          ? `Phase ${activePhase.id} — ${activePhase.shortTitle ?? activePhase.title}`
+          : undefined;
+        void startTimerTracking({
+          endsAtMs: started.endsAtMs,
+          kind: 'focus',
+          variant: started.variant ?? 'study',
+          phaseLabel
+        });
+      }
+      return started;
+    });
+  };
+  const handlePauseFocus = () => {
+    updateFocusTimer((t) => {
+      if (!t) return t;
+      // Cancel server tracking when pausing.
+      if (isAuthenticated) void cancelTimerTracking();
+      return pauseTimer(t, Date.now());
+    });
+  };
   const handleStopFocus = () => {
     focusCompletedRef.current = null;
+    // Cancel server tracking on stop/reset.
+    if (isAuthenticated) void cancelTimerTracking();
     updateFocusTimer((t) => (t ? resetTimer(t, t.durationSec) : t));
   };
 
@@ -506,6 +542,9 @@ export default function App() {
     focusCompletedRef.current = f.endsAtMs;
 
     void playAlarm();
+    // Timer expired in-app — cancel server tracking (local notification
+    // already delivered, no need for a push).
+    if (isAuthenticated) void cancelTimerTracking();
     if ((f.variant ?? 'study') === 'study' && activePhase) {
       const minutes = Math.max(1, Math.round(f.durationSec / 60));
       notifyFocusComplete(

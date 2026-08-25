@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pause, Play, Square, Timer } from 'lucide-react';
+import { Pause, Play, Square, Maximize2, Timer } from 'lucide-react';
 import { TimerState, formatCountdown, isRunning, remainingSeconds } from '../utils/timerEngine';
 
 interface ActiveTimerBarProps {
@@ -15,6 +15,9 @@ interface ActiveTimerBarProps {
  * Compact strip pinned below the header while a focus or step timer is
  * active and the timer modal is closed. Keeps the countdown visible
  * anywhere in the app — the whole point of the background timer.
+ *
+ * Tapping the countdown display toggles pause/resume. A small expand
+ * button opens the full timer modal.
  */
 export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
   timer,
@@ -36,11 +39,13 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
 
   return (
     <div className="bg-surface/95 backdrop-blur-md border-b border-line">
-      <div className="max-w-3xl lg:max-w-5xl mx-auto px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-3">
+      <div className="max-w-3xl lg:max-w-5xl mx-auto px-3 sm:px-4 py-1.5 sm:py-2 flex items-center gap-2">
+        {/* Countdown display — tap to pause/resume */}
         <button
-          onClick={onOpenModal}
-          className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
-          aria-label="Open timer"
+          onClick={expired ? undefined : onToggleRun}
+          disabled={expired}
+          className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer group disabled:cursor-default"
+          aria-label={running ? 'Pause timer' : expired ? 'Timer finished' : 'Resume timer'}
         >
           <span className="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
             {running && !expired && (
@@ -72,23 +77,22 @@ export const ActiveTimerBar: React.FC<ActiveTimerBarProps> = ({
           </span>
         </button>
 
-        {!expired && (
-          <button
-            onClick={onToggleRun}
-            aria-label={running ? 'Pause timer' : 'Resume timer'}
-            className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
-          >
-            {running ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          </button>
-        )}
+        {/* Expand — open the full timer modal */}
+        <button
+          onClick={onOpenModal}
+          aria-label="Open timer details"
+          className="min-h-9 min-w-9 flex items-center justify-center rounded-md text-muted hover:text-text hover:bg-hover transition-colors cursor-pointer shrink-0"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+        </button>
 
         <button
           onClick={onStop}
           aria-label="Stop timer"
           title={expired ? 'Dismiss' : 'Stop and reset'}
-          className="min-h-10 min-w-10 flex items-center justify-center rounded-md text-faint hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
+          className="min-h-9 min-w-9 flex items-center justify-center rounded-md text-faint hover:text-danger hover:bg-hover transition-colors cursor-pointer shrink-0"
         >
-          <Square className="w-4 h-4" />
+          <Square className="w-3.5 h-3.5" />
         </button>
       </div>
     </div>

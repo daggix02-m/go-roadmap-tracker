@@ -16,6 +16,8 @@ import type * as push from "../push.js";
 import type * as reminderPolicy from "../reminderPolicy.js";
 import type * as reminders from "../reminders.js";
 import type * as snapshots from "../snapshots.js";
+import type * as timerPolicy from "../timerPolicy.js";
+import type * as timerSchedule from "../timerSchedule.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +34,8 @@ declare const fullApi: ApiFromModules<{
   reminderPolicy: typeof reminderPolicy;
   reminders: typeof reminders;
   snapshots: typeof snapshots;
+  timerPolicy: typeof timerPolicy;
+  timerSchedule: typeof timerSchedule;
 }>;
 
 /**
