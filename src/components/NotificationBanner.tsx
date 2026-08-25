@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Bell, BellOff, Check, Clock, Download, Send, BellMinus, AlertTriangle } from 'lucide-react';
+import { Bell, BellOff, Check, Clock, Download, Send, BellMinus, AlertTriangle, LogIn } from 'lucide-react';
 import { useQuery } from 'convex/react';
+import { useConvexAuth } from '@convex-dev/auth/react';
 import { api } from '../../convex/_generated/api';
 import { AppSettings, Phase } from '../types';
 import {
@@ -10,6 +11,7 @@ import {
   playAlarm
 } from '../utils/notifications';
 import { usePushSubscription } from '../utils/usePushSubscription';
+import { decideBannerButtons } from '../utils/pushReminderPolicy';
 
 interface NotificationBannerProps {
   settings: AppSettings;
@@ -18,6 +20,7 @@ interface NotificationBannerProps {
   planName: string;
   onUpdateSettings: (updater: (prev: AppSettings) => AppSettings) => void;
   onOpenInstallGuide: () => void;
+  onOpenAuthModal: () => void;
 }
 
 export const NotificationBanner: React.FC<NotificationBannerProps> = ({
@@ -26,7 +29,8 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   activePhase,
   planName,
   onUpdateSettings,
-  onOpenInstallGuide
+  onOpenInstallGuide,
+  onOpenAuthModal
 }) => {
   const [isTesting, setIsTesting] = useState(false);
   const [testSuccess, setTestSuccess] = useState(false);
@@ -37,6 +41,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     return 'default';
   });
 
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const push = usePushSubscription();
   const supported = isNotificationSupported();
   // Server-side schedule health (null while signed out / loading).
@@ -50,9 +55,20 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
   // Surface silent server-side failures: the cron retries 5× before giving
   // up, so any recorded failure means delivery is currently broken.
   const serverBroken =
+    isAuthenticated &&
     reminderStatus?.scheduled &&
     !!reminderStatus.lastError &&
     reminderStatus.lastError !== 'gone';
+
+  const banner = decideBannerButtons({
+    permission,
+    dailyReminderEnabled: settings.dailyReminderEnabled,
+    needsInstall: push.needsInstall,
+    serverBroken,
+    pushSupported: push.supported,
+    isAuthenticated,
+    authLoading
+  });
 
   const handleDisableReminders = async () => {
     await push.unsubscribe();
@@ -73,6 +89,14 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     // iOS non-installed → guide to install first.
     if (push.needsInstall) {
       return; // The install prompt handles this via InstallGuideModal.
+    }
+
+    // Reminders are stored server-side and delivered by the cron, so they
+    // require a signed-in session. Without one the subscribe mutation throws
+    // "Not authenticated" — gate before doing any work.
+    if (!isAuthenticated) {
+      onOpenAuthModal();
+      return;
     }
 
     try {
@@ -104,6 +128,8 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
         await push.subscribe(settings.dailyReminderTime, tz, phaseLabel);
       }
 
+      // Only flip the enabled flag once the subscribe call (and its server
+      // mutation) succeeded — `push.subscribe` throws on failure.
       onUpdateSettings((prev) => ({ ...prev, dailyReminderEnabled: true }));
       sendTestNotification(activePhase, streak, planName);
     } catch (err) {
@@ -124,7 +150,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
     setIsTesting(false);
   };
 
-  const isEnabled = permission === 'granted' && settings.dailyReminderEnabled;
+  const isEnabled = isAuthenticated && permission === 'granted' && settings.dailyReminderEnabled;
 
   return (
     <div className="max-w-3xl lg:max-w-5xl mx-auto px-4 mt-4">
@@ -138,6 +164,31 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
               {vapidHealth.error || 'VAPID keys not set. Run the setup commands in your terminal.'}
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Failed subscribe — surface a friendly message instead of a silent failure. */}
+      {push.error && (
+        <div className="mb-2 p-2.5 rounded-lg bg-danger/5 border border-danger/20 flex items-center justify-between gap-2">
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-danger shrink-0 mt-0.5" />
+            <p className="text-xs text-danger">{push.error}</p>
+          </div>
+          {!isAuthenticated ? (
+            <button
+              onClick={onOpenAuthModal}
+              className="shrink-0 px-2.5 py-1 rounded-md border border-danger/40 bg-danger/5 text-danger text-xs font-medium transition-colors cursor-pointer"
+            >
+              Sign in
+            </button>
+          ) : (
+            <button
+              onClick={() => push.clearError()}
+              className="shrink-0 px-2.5 py-1 rounded-md border border-danger/40 bg-danger/5 text-danger text-xs font-medium transition-colors cursor-pointer"
+            >
+              Dismiss
+            </button>
+          )}
         </div>
       )}
 
@@ -161,7 +212,36 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
         </div>
 
         <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 flex-wrap">
-          {isEnabled ? (
+          {banner.showInstallPrompt ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-warning font-medium">Install app first</span>
+              <button
+                onClick={onOpenInstallGuide}
+                className="px-2.5 py-1.5 rounded-md border border-warning/40 bg-warning/5 text-warning text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" /> Install
+              </button>
+            </div>
+          ) : banner.showSignInButton ? (
+            <button
+              onClick={onOpenAuthModal}
+              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <LogIn className="w-3.5 h-3.5" /> Sign in to sync reminders
+              </span>
+            </button>
+          ) : banner.showEnableButton ? (
+            <button
+              id="enable-notification-btn"
+              onClick={handleEnableNotification}
+              disabled={push.loading || (vapidHealth !== undefined && !vapidHealth.configured)}
+              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              title={vapidHealth && !vapidHealth.configured ? 'Push notifications misconfigured — check setup' : undefined}
+            >
+              {push.loading ? 'Setting up…' : 'Enable reminders'}
+            </button>
+          ) : banner.showTestButton && banner.showTurnOffButton ? (
             <>
               <div className="flex items-center gap-1.5 bg-raised border border-line rounded-md px-2 py-1.5">
                 <Clock className="w-3.5 h-3.5 text-muted" />
@@ -205,27 +285,7 @@ export const NotificationBanner: React.FC<NotificationBannerProps> = ({
                 Turn off
               </button>
             </>
-          ) : push.needsInstall ? (
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-warning font-medium">Install app first</span>
-              <button
-                onClick={onOpenInstallGuide}
-                className="px-2.5 py-1.5 rounded-md border border-warning/40 bg-warning/5 text-warning text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5" /> Install
-              </button>
-            </div>
-          ) : (
-            <button
-              id="enable-notification-btn"
-              onClick={handleEnableNotification}
-              disabled={push.loading || (vapidHealth !== undefined && !vapidHealth.configured)}
-              className="px-3 py-1.5 rounded-md bg-text text-page text-xs font-semibold transition-opacity hover:opacity-85 cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-              title={vapidHealth && !vapidHealth.configured ? 'Push notifications misconfigured — check setup' : undefined}
-            >
-              {push.loading ? 'Setting up…' : 'Enable reminders'}
-            </button>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

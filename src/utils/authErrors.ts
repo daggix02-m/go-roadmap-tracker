@@ -7,6 +7,20 @@
  * Leaking those to the UI is ugly and confusing, so map the known codes here
  * and keep app-thrown messages (validation copy) untouched.
  */
+/**
+ * True when `msg` indicates the session token is missing or can't be
+ * verified by the backend (expired, invalidated, or stale from a previous
+ * deployment) — as opposed to a real action failure.
+ */
+export function isAuthError(msg: string): boolean {
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('not authenticated') ||
+    lower.includes('failed to authenticate') ||
+    lower.includes('no auth provider found')
+  );
+}
+
 export function authErrorMessage(msg: string): string {
   const lower = msg.toLowerCase();
 
@@ -34,11 +48,7 @@ export function authErrorMessage(msg: string): string {
 
   // Stored token the backend can't verify — usually an expired or
   // invalidated session, not a real action failure.
-  if (
-    lower.includes('not authenticated') ||
-    lower.includes('failed to authenticate') ||
-    lower.includes('no auth provider found')
-  ) {
+  if (isAuthError(msg)) {
     return 'Session expired — please sign in again.';
   }
 

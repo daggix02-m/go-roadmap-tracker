@@ -807,6 +807,7 @@ export default function App() {
           planName={activePlan.name}
           onUpdateSettings={handleUpdateSettings}
           onOpenInstallGuide={() => setShowInstallGuideModal(true)}
+          onOpenAuthModal={() => setShowAuthModal(true)}
         />
       )}
 

@@ -11,6 +11,8 @@ import { useConvexAuth } from '@convex-dev/auth/react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { validateVapidKey, urlBase64ToUint8Array } from './vapidKey';
+import { decideSubscribeOutcome } from './pushReminderPolicy';
+import { authErrorMessage, isAuthError } from './authErrors';
 
 function isIOS(): boolean {
   return /iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -32,11 +34,14 @@ export interface PushState {
   subscribed: boolean;
   /** True while a subscribe/unsubscribe action is in progress. */
   loading: boolean;
+  /** Friendly message for the last failed subscribe, or null. */
+  error: string | null;
 }
 
 export interface PushActions {
   subscribe: (reminderTime: string, tz: string, activePhaseLabel?: string) => Promise<void>;
   unsubscribe: () => Promise<void>;
+  clearError: () => void;
 }
 
 export function usePushSubscription(): PushState & PushActions {
@@ -47,6 +52,9 @@ export function usePushSubscription(): PushState & PushActions {
 
   const [subscribed, setSubscribed] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const ios = isIOS();
   const standalone = isStandalone();
@@ -89,6 +97,8 @@ export function usePushSubscription(): PushState & PushActions {
       }
 
       setLoading(true);
+      setError(null);
+      let sub: PushSubscription | null = null;
       try {
         const reg = await navigator.serviceWorker.ready;
 
@@ -134,24 +144,52 @@ export function usePushSubscription(): PushState & PushActions {
           });
         }
 
-        const sub = await reg.pushManager.subscribe({
+        const subResult = await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(vapidKey)
         });
-        console.log('[Push] Subscription successful', { endpoint: sub.endpoint.slice(0, 50) + '...' });
+        console.log('[Push] Subscription successful', { endpoint: subResult.endpoint.slice(0, 50) + '...' });
+        sub = subResult;
         // Store in Convex.
         await storeSubscription({
-          endpoint: sub.endpoint,
-          subscriptionJson: JSON.stringify(sub.toJSON()),
+          endpoint: subResult.endpoint,
+          subscriptionJson: JSON.stringify(subResult.toJSON()),
           reminderTime,
           tz,
           activePhaseLabel
         });
         setSubscribed(true);
+        setError(null);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const name = err instanceof Error ? err.name : 'unknown';
+        const authError = isAuthError(msg);
+
+        // Decide what the failed round means for local state. The browser
+        // subscription may already exist (server mutation failed after
+        // PushManager.subscribe() succeeded) — roll it back so browser and
+        // server state never drift.
+        const outcome = decideSubscribeOutcome({
+          browserSubscriptionCreated: sub !== null,
+          serverMutationOk: false,
+          authError
+        });
+        setSubscribed(false);
+        setError(authError ? authErrorMessage(msg) : 'Reminders could not be enabled. Please try again.');
+
+        if (outcome.rollbackBrowser && sub) {
+          console.warn('[Push] Server mutation failed — rolling back browser subscription');
+          try {
+            await sub.unsubscribe();
+          } catch {
+            // Best-effort rollback; ignore unsubscribe failures.
+          }
+        }
+
         console.error(`[Push] Subscribe failed: ${name}: ${msg}`, err);
+        if (authError) {
+          console.error('[Push] Session invalid — sign in again before enabling reminders.');
+        }
 
         // Actionable diagnostics for the most common failure modes
         if (name === 'AbortError') {
@@ -175,6 +213,10 @@ export function usePushSubscription(): PushState & PushActions {
           console.error('  - Try in a different browser to isolate the issue');
           console.groupEnd();
         }
+
+        // Rethrow so the caller knows the enable action failed and must not
+        // flip `dailyReminderEnabled` to true.
+        throw err;
       } finally {
         setLoading(false);
       }
@@ -203,5 +245,5 @@ export function usePushSubscription(): PushState & PushActions {
     }
   }, [pushSupported, removeSubscription]);
 
-  return { supported, needsInstall, subscribed, loading, subscribe, unsubscribe };
+  return { supported, needsInstall, subscribed, loading, error, subscribe, unsubscribe, clearError };
 }
