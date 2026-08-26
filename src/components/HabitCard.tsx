@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
 import { Check, Flame, BarChart3 } from 'lucide-react';
-import { Habit, HABIT_COLORS } from '../types';
+import { Habit, HabitCompletions, HABIT_COLORS } from '../types';
 import { calculateStreak, getHabitCompletions } from '../utils/habits';
-import { HabitCompletions } from '../types';
 
 interface HabitCardProps {
   habit: Habit;
