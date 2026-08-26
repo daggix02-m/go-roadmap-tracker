@@ -149,6 +149,10 @@ export interface AppData {
   progressByPlan: Record<string, PlanProgress>;
   /** Daily quests (routines) + XP. Absent = user has never used quests. */
   quests?: QuestState;
+  /** Habit tracking (Grit-style daily habits). Absent = user has never used habits. */
+  habits?: Habit[];
+  /** Habit completions by habitId -> date -> completed. Absent = no completions. */
+  habitCompletions?: HabitCompletions;
   /** Epoch-ms timestamp for three-way merge LWW resolution. */
   lastModifiedAt?: number;
 }
@@ -172,3 +176,92 @@ export interface FilterState {
   section: SectionFilter;
   searchQuery: string;
 }
+
+// ---------------------------------------------------------------------------
+// Habit tracking (Grit-style daily habits)
+// ---------------------------------------------------------------------------
+
+export const HABIT_COLORS = [
+  { id: 'blue', label: 'Blue', cssClass: 'bg-blue-500' },
+  { id: 'green', label: 'Green', cssClass: 'bg-green-500' },
+  { id: 'red', label: 'Red', cssClass: 'bg-red-500' },
+  { id: 'purple', label: 'Purple', cssClass: 'bg-purple-500' },
+  { id: 'orange', label: 'Orange', cssClass: 'bg-orange-500' },
+  { id: 'pink', label: 'Pink', cssClass: 'bg-pink-500' },
+  { id: 'teal', label: 'Teal', cssClass: 'bg-teal-500' },
+  { id: 'yellow', label: 'Yellow', cssClass: 'bg-yellow-500' },
+] as const;
+
+export type HabitColor = (typeof HABIT_COLORS)[number]['id'];
+
+export interface Habit {
+  id: string;
+  title: string;
+  emoji: string;
+  color: HabitColor;
+  enabled: boolean;
+  /** Optional daily target in minutes — auto-completes when enough focus time is logged. */
+  targetMinutes?: number;
+  createdAt: number;
+  /** Bumped on every edit so cross-device merges can resolve LWW per habit. */
+  updatedAt?: number;
+  /** Tombstone flag — habit was deleted on another device. */
+  deleted?: boolean;
+}
+
+export interface HabitCompletions {
+  /** habitId -> 'YYYY-MM-DD' -> completed (true). */
+  [habitId: string]: Record<string, boolean>;
+}
+
+export interface HabitStreak {
+  current: number;
+  best: number;
+  /** Penalty points for missed days (-1 per missed day). */
+  penalty: number;
+}
+
+/** Status of a day in the calendar view. */
+export type HabitDayStatus = 'completed' | 'missed' | 'today' | 'future' | 'none';
+
+/** Calendar day for the monthly view. */
+export interface CalendarDay {
+  date: string; // YYYY-MM-DD
+  isCurrentMonth: boolean;
+  isToday: boolean;
+  status: HabitDayStatus;
+}
+
+/** Streak display info for the UI. */
+export interface StreakDisplay {
+  emoji: string;
+  text: string;
+  className: string;
+}
+
+/** Daily plan template for quick habit setup. */
+export interface DailyPlanTemplate {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  habits: { title: string; emoji: string; color: HabitColor }[];
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+}
+
+/** Achievement definitions — checked against habit state to determine unlock status. */
+export const ACHIEVEMENTS: Omit<Achievement, 'unlocked'>[] = [
+  { id: 'first-habit', title: 'First Step', description: 'Create your first habit', icon: '🌱' },
+  { id: 'five-habits', title: 'Habit Builder', description: 'Create 5 habits', icon: '🏗️' },
+  { id: 'streak-7', title: 'Week Warrior', description: 'Maintain a 7-day streak', icon: '🔥' },
+  { id: 'streak-30', title: 'Monthly Master', description: 'Maintain a 30-day streak', icon: '🏆' },
+  { id: 'all-complete', title: 'Perfect Day', description: 'Complete all habits in a day', icon: '⭐' },
+  { id: 'hundred-completions', title: 'Century Club', description: 'Complete habits 100 times', icon: '💯' },
+];

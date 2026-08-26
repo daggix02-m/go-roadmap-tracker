@@ -244,6 +244,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
                 placeholder={'# My roadmap\n## Phase 1\n- first step'}
+                aria-label="Paste roadmap content"
                 rows={5}
                 className="mt-2 w-full px-2.5 py-2 rounded-md bg-raised border border-line text-xs font-mono text-text focus:outline-none focus:border-accent/60 resize-y"
               />

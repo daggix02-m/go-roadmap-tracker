@@ -46,7 +46,7 @@ export const DailyQuests: React.FC<DailyQuestsProps> = ({ quests, locked = false
         aria-label={`Level ${level} progress`}
       >
         <div
-          className="h-full bg-accent transition-all duration-500 ease-out"
+          className="h-full bg-accent transition-[width] duration-500 ease-out"
           style={{ width: `${levelPct}%` }}
         />
       </div>

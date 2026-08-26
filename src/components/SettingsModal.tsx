@@ -469,6 +469,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <input
                   type="email"
                   placeholder="New email"
+                  aria-label="New email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className={inputClass}
@@ -476,6 +477,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <input
                   type="password"
                   placeholder="Current password"
+                  aria-label="Current password for email change"
                   value={emailPw}
                   onChange={(e) => setEmailPw(e.target.value)}
                   className={inputClass}
@@ -506,6 +508,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="password"
               autoComplete="current-password"
               placeholder="Current password"
+              aria-label="Current password"
               value={curPw}
               onChange={(e) => setCurPw(e.target.value)}
               className={inputClass}
@@ -514,6 +517,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="password"
               autoComplete="new-password"
               placeholder="New password (min 8 characters)"
+              aria-label="New password"
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
               className={inputClass}
@@ -522,6 +526,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="password"
               autoComplete="new-password"
               placeholder="Confirm new password"
+              aria-label="Confirm new password"
               value={confirmPw}
               onChange={(e) => setConfirmPw(e.target.value)}
               className={inputClass}

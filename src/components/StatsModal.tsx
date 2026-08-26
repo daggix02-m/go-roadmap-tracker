@@ -213,7 +213,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             </div>
             <div className="mt-2 h-1.5 w-full rounded-full bg-page overflow-hidden">
               <div
-                className={`h-full transition-all duration-500 ease-out ${
+                className={`h-full transition-[width] duration-500 ease-out ${
                   todayMinutes >= goalMinutes ? 'bg-success' : 'bg-accent'
                 }`}
                 style={{ width: `${Math.min(100, Math.round((todayMinutes / goalMinutes) * 100))}%` }}
@@ -241,7 +241,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 </div>
                 <div className="mt-1.5 h-1 w-full rounded-full bg-page overflow-hidden">
                   <div
-                    className="h-full bg-accent transition-all duration-500 ease-out"
+                    className="h-full bg-accent transition-[width] duration-500 ease-out"
                     style={{ width: `${part.percent}%` }}
                   />
                 </div>

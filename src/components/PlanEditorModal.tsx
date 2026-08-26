@@ -250,7 +250,7 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                     onClick={() => setAccent(opt.value)}
                     aria-pressed={accent === opt.value}
                     title={opt.label}
-                    className={`w-7 h-7 rounded-md ${opt.swatch} transition-all cursor-pointer ${
+                    className={`w-7 h-7 rounded-md ${opt.swatch} transition-[opacity,transform] cursor-pointer ${
                       accent === opt.value
                         ? 'ring-2 ring-offset-2 ring-offset-surface ring-text/60'
                         : 'opacity-60 hover:opacity-100'
@@ -389,16 +389,18 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                       <div className="px-3 pb-3 pt-1 space-y-2.5 border-t border-line">
                         <div className="grid grid-cols-[1fr_auto] gap-2 pt-2">
                           <div>
-                            <label className={labelClass}>Title</label>
+                            <label className={labelClass} htmlFor={`phase-title-${draft.id}`}>Title</label>
                             <input
+                              id={`phase-title-${draft.id}`}
                               value={draft.title}
                               onChange={(e) => updatePhaseDraft(draft.id, { title: e.target.value })}
                               className={inputClass}
                             />
                           </div>
                           <div className="w-28">
-                            <label className={labelClass}>Hours</label>
+                            <label className={labelClass} htmlFor={`phase-hours-${draft.id}`}>Hours</label>
                             <input
+                              id={`phase-hours-${draft.id}`}
                               value={draft.estimatedHours}
                               onChange={(e) =>
                                 updatePhaseDraft(draft.id, { estimatedHours: e.target.value })
@@ -430,8 +432,9 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                         </div>
 
                         <div>
-                          <label className={labelClass}>Description</label>
+                          <label className={labelClass} htmlFor={`phase-desc-${draft.id}`}>Description</label>
                           <textarea
+                            id={`phase-desc-${draft.id}`}
                             value={draft.what}
                             onChange={(e) => updatePhaseDraft(draft.id, { what: e.target.value })}
                             rows={2}
@@ -441,8 +444,9 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                         </div>
 
                         <div>
-                          <label className={labelClass}>Concepts (comma-separated)</label>
+                          <label className={labelClass} htmlFor={`phase-concepts-${draft.id}`}>Concepts (comma-separated)</label>
                           <input
+                            id={`phase-concepts-${draft.id}`}
                             value={draft.concepts}
                             onChange={(e) => updatePhaseDraft(draft.id, { concepts: e.target.value })}
                             placeholder="arrays, loops, errors"
@@ -451,8 +455,9 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                         </div>
 
                         <div>
-                          <label className={labelClass}>Steps (one per line)</label>
+                          <label className={labelClass} htmlFor={`phase-steps-${draft.id}`}>Steps (one per line)</label>
                           <textarea
+                            id={`phase-steps-${draft.id}`}
                             value={draft.steps}
                             onChange={(e) => updatePhaseDraft(draft.id, { steps: e.target.value })}
                             rows={3}
@@ -462,10 +467,11 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                         </div>
 
                         <div>
-                          <label className={labelClass}>
+                          <label className={labelClass} htmlFor={`phase-exit-${draft.id}`}>
                             Exit criteria — one per line (empty = no gate)
                           </label>
                           <textarea
+                            id={`phase-exit-${draft.id}`}
                             value={draft.exit}
                             onChange={(e) => updatePhaseDraft(draft.id, { exit: e.target.value })}
                             rows={3}
@@ -475,8 +481,9 @@ export const PlanEditorModal: React.FC<PlanEditorModalProps> = ({ plan, onClose,
                         </div>
 
                         <div>
-                          <label className={labelClass}>Pro tip (optional)</label>
+                          <label className={labelClass} htmlFor={`phase-protip-${draft.id}`}>Pro tip (optional)</label>
                           <input
+                            id={`phase-protip-${draft.id}`}
                             value={draft.proTip}
                             onChange={(e) => updatePhaseDraft(draft.id, { proTip: e.target.value })}
                             className={inputClass}

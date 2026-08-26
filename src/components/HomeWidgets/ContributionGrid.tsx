@@ -9,8 +9,13 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /**
  * GitHub-style study activity grid: one column per week, Mon-Sun rows.
  * Intensity reflects minutes studied that day.
+ * If habit data is available, a small dot below shows habit completion.
  */
-export const ContributionGrid: React.FC<WidgetData> = ({ historyMinutes }) => {
+export const ContributionGrid: React.FC<WidgetData> = ({
+  historyMinutes,
+  habitCompletions,
+  getHabitCountForDay,
+}) => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
@@ -34,6 +39,8 @@ export const ContributionGrid: React.FC<WidgetData> = ({ historyMinutes }) => {
       lastMonth = m;
     }
   });
+
+  const hasHabits = habitCompletions && Object.keys(habitCompletions).length > 0;
 
   return (
     <WidgetBody>
@@ -73,30 +80,54 @@ export const ContributionGrid: React.FC<WidgetData> = ({ historyMinutes }) => {
             const key = getLocalDateString(d);
             const future = d > today;
             const mins = future ? -1 : historyMinutes[key] ?? 0;
+
+            // Habit completion for this day
+            let habitDone = false;
+            if (!future && hasHabits && getHabitCountForDay) {
+              const count = getHabitCountForDay(key);
+              habitDone = count.completed > 0;
+            }
+
             return (
-              <div
-                key={key}
-                title={
-                  future
-                    ? undefined
-                    : `${d.toLocaleDateString('en', { month: 'short', day: 'numeric' })} — ${
-                        mins === 0 ? 'no study' : `${mins}m`
-                      }`
-                }
-                className={`w-3 h-3 rounded-[3px] ${future ? 'bg-transparent' : levelClass(mins)}`}
-              />
+              <div key={key} className="flex flex-col items-center gap-[1px]">
+                <div
+                  title={
+                    future
+                      ? undefined
+                      : `${d.toLocaleDateString('en', { month: 'short', day: 'numeric' })} — ${
+                          mins === 0 ? 'no study' : `${mins}m`
+                        }${habitDone ? ' ✓ habits' : ''}`
+                  }
+                  className={`w-3 h-3 rounded-[3px] ${future ? 'bg-transparent' : levelClass(mins)}`}
+                />
+                {hasHabits && !future && (
+                  <div
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      habitDone ? 'bg-success' : 'bg-transparent'
+                    }`}
+                    title={habitDone ? 'Habits completed' : 'Habits missed'}
+                  />
+                )}
+              </div>
             );
           })}
         </div>
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-1.5 mt-2 justify-end">
+      <div className="flex items-center gap-1.5 mt-2 justify-end flex-wrap">
         <span className="text-[10px] font-mono text-faint mr-0.5">Less</span>
         {[0, 15, 45, 90, 150].map((m) => (
           <span key={m} className={`w-3 h-3 rounded-[3px] ${levelClass(m)}`} />
         ))}
         <span className="text-[10px] font-mono text-faint ml-0.5">More</span>
+        {hasHabits && (
+          <>
+            <span className="text-[10px] font-mono text-faint ml-2">·</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-success" />
+            <span className="text-[10px] font-mono text-faint">Habits</span>
+          </>
+        )}
       </div>
     </WidgetBody>
   );

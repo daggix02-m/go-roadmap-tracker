@@ -132,6 +132,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onClick={onOpenInstallGuide}
                   className={iconButtonClass}
                   title="Install as app"
+                  aria-label="Install as app"
                 >
                   <Download className="w-4 h-4" />
                 </button>
@@ -247,7 +248,7 @@ export const Header: React.FC<HeaderProps> = ({
             className="h-1 w-full rounded-full bg-raised overflow-hidden"
           >
             <div
-              className={`h-full ${ACCENT_BAR_CLASS[plan.accent]} transition-all duration-500 ease-out`}
+              className={`h-full ${ACCENT_BAR_CLASS[plan.accent]} transition-[width] duration-500 ease-out`}
               style={{ width: `${progress.overallPercent}%` }}
             />
           </div>

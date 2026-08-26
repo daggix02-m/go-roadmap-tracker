@@ -17,6 +17,7 @@ import {
   isDayQuestEligible,
   getLocalDateString
 } from './utils/storage';
+import { createHabit } from './utils/habits';
 import { BUILT_IN_PLANS, deleteCustomPlan, getAllPlans, getActivePlan, getActivePhase, getPlanProgress } from './data/plans';
 import { forkPlan, generatePlanId, validatePlan } from './utils/plans';
 import { getProgressSummary } from './data/progress';
@@ -42,6 +43,9 @@ import {
 import { PlanSwitcher } from './components/PlanSwitcher';
 import { HomeWidgetCard } from './components/HomeWidgets/WidgetSwitcher';
 import { DailyQuests } from './components/DailyQuests';
+import { HabitList } from './components/HabitList';
+import { HabitStatsModal } from './components/HabitStatsModal';
+import { AchievementBadges } from './components/AchievementBadges';
 import { MobileBottomBar } from './components/MobileBottomBar';
 import { ActiveTimerBar } from './components/ActiveTimerBar';
 import { useSync } from './utils/useSync';
@@ -74,6 +78,9 @@ const PlanEditorModal = lazy(() =>
 const SettingsModal = lazy(() =>
   import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
 );
+const AddHabitModal = lazy(() =>
+  import('./components/AddHabitModal').then((m) => ({ default: m.AddHabitModal }))
+);
 
 export default function App() {
   const [appData, setAppData] = useState<AppData>(() => loadAppData());
@@ -87,6 +94,9 @@ export default function App() {
   const [showInstallGuideModal, setShowInstallGuideModal] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showAddHabitModal, setShowAddHabitModal] = useState(false);
+  const [showHabitStatsModal, setShowHabitStatsModal] = useState(false);
+  const [habitStatsId, setHabitStatsId] = useState<string | null>(null);
 
   // Cross-device sync engine.
   const { syncing, lastSyncedAt, pushNow, syncedData } = useSync();
@@ -273,6 +283,37 @@ export default function App() {
       settings: { ...prev.settings, theme: 'nord', layout: 'focus', homeWidget: 'ring' }
     }));
   }, [handleUpdateData]);
+
+  // --- Habit tracking (Grit-style) -----------------------------------------
+
+  const handleToggleHabitCompletion = useCallback((habitId: string, day: string) => {
+    handleUpdateData((prev) => {
+      const current = prev.habitCompletions?.[habitId]?.[day] ?? false;
+      const habitCompletions = { ...(prev.habitCompletions ?? {}) };
+      const habitDays = { ...(habitCompletions[habitId] ?? {}) };
+
+      if (current) {
+        delete habitDays[day];
+      } else {
+        habitDays[day] = true;
+      }
+
+      habitCompletions[habitId] = habitDays;
+      return { ...prev, habitCompletions };
+    });
+  }, [handleUpdateData]);
+
+  const handleAddHabit = useCallback((title: string, emoji: string, color: string, targetMinutes?: number) => {
+    handleUpdateData((prev) => {
+      const newHabit = createHabit(title, emoji, color as any, targetMinutes);
+      return { ...prev, habits: [...(prev.habits ?? []), newHabit] };
+    });
+  }, [handleUpdateData]);
+
+  const handleShowHabitStats = useCallback((habitId: string) => {
+    setHabitStatsId(habitId);
+    setShowHabitStatsModal(true);
+  }, []);
 
   /** Restore a full JSON backup (Import flow). */
   const handleImportAppData = useCallback(
@@ -868,16 +909,30 @@ export default function App() {
             completedPhases: progress.completedPhases.length,
             totalPhases: activePlan.phases.length,
             totalStudyMinutes: appData.global.totalStudyMinutes,
-            planAccent: activePlan.accent
+            planAccent: activePlan.accent,
+            habitCompletions: appData.habitCompletions ?? {},
+            getHabitCountForDay: (date: string) => {
+              const habits = appData.habits ?? [];
+              const completions = appData.habitCompletions ?? {};
+              const enabled = habits.filter((h) => h.enabled && !h.deleted);
+              const completed = enabled.filter((h) => completions[h.id]?.[date]);
+              return { completed: completed.length, total: enabled.length };
+            }
           }}
           onChangeWidget={(id) => handleUpdateSettings((prev) => ({ ...prev, homeWidget: id }))}
         />
 
-        {/* Phase XP + levels */}
-        <DailyQuests
-          quests={appData.quests ?? emptyQuestState()}
-          locked={questsLocked}
+        {/* Daily habits (Grit-style) */}
+        <HabitList
+          habits={appData.habits ?? []}
+          completions={appData.habitCompletions ?? {}}
+          onToggleCompletion={handleToggleHabitCompletion}
+          onAddHabit={() => setShowAddHabitModal(true)}
+          onShowStats={handleShowHabitStats}
         />
+
+        {/* Achievements */}
+        <AchievementBadges achievements={[]} />
 
         {/* Intro: the method */}
         {activePlan.method &&
@@ -1054,6 +1109,26 @@ export default function App() {
             onApplyDemoSetup={handleApplyDemoSetup}
             onImportAppData={handleImportAppData}
             onImportPlans={handleImportPlans}
+          />
+        )}
+
+        {showAddHabitModal && (
+          <AddHabitModal
+            isOpen={showAddHabitModal}
+            onClose={() => setShowAddHabitModal(false)}
+            onAdd={handleAddHabit}
+          />
+        )}
+
+        {showHabitStatsModal && (
+          <HabitStatsModal
+            isOpen={showHabitStatsModal}
+            habit={(appData.habits ?? []).find((h) => h.id === habitStatsId) ?? null}
+            completions={appData.habitCompletions ?? {}}
+            onClose={() => {
+              setShowHabitStatsModal(false);
+              setHabitStatsId(null);
+            }}
           />
         )}
       </Suspense>

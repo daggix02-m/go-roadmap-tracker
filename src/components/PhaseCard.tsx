@@ -483,6 +483,9 @@ export const PhaseCard: React.FC<PhaseCardProps> = React.memo(function PhaseCard
               <h4 className={`${sectionLabelClass} mb-0`}>Notes</h4>
               <span className="text-[11px] text-faint">Saved automatically</span>
             </div>
+            <label htmlFor={`notes-textarea-${phase.id}`} className="sr-only">
+              Notes for phase {phase.id}
+            </label>
             <textarea
               id={`notes-textarea-${phase.id}`}
               placeholder="Observations, benchmark numbers, snippets…"

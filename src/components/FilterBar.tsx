@@ -41,6 +41,9 @@ export const FilterBar: React.FC<FilterBarProps> = ({ plan, filter, onFilterChan
         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-faint">
           <Search className="w-4 h-4" />
         </div>
+        <label htmlFor="roadmap-search-input" className="sr-only">
+          Search phases, concepts, steps
+        </label>
         <input
           id="roadmap-search-input"
           type="text"

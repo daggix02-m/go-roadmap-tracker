@@ -33,6 +33,10 @@ export interface WidgetData {
   totalStudyMinutes: number;
   /** Active plan accent token name ('accent' | 'success' | …). */
   planAccent: string;
+  /** Habit completions per habitId → date → completed. */
+  habitCompletions?: Record<string, Record<string, boolean>>;
+  /** Number of habits completed on a given day. */
+  getHabitCountForDay?: (date: string) => { completed: number; total: number };
 }
 
 export const WidgetBody: React.FC<{ children: React.ReactNode }> = ({ children }) => (
